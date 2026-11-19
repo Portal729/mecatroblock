@@ -1,0 +1,17 @@
+{
+  "name": "MecatroBlock IDE",
+  "short_name": "MecatroBlock",
+  "description": "Entorno móvil de mecatrónica embebida, bloques y protoboard.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#050912",
+  "theme_color": "#0F172A",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2103/2103633.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
