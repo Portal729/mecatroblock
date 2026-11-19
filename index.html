@@ -3,7 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#050912" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>MecatroBlock IDE — CodeSpaces, Multi-Placa y Base Operativa</title>
+
+  <!-- Vinculaciones PWA y Favicon -->
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310B981' stroke-width='2.2'%3E%3Crect x='4' y='4' width='16' height='16' rx='3'/%3E%3Crect x='9' y='9' width='6' height='6' rx='1'/%3E%3C/svg%3E" />
+
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -196,6 +205,9 @@
   </style>
 </head>
 <body class="flex justify-center">
+
+  <!-- Input oculto para importar archivos reales al CodeSpace -->
+  <input id="cs-file-importer" type="file" accept=".cpp,.c,.h,.hpp,.py,.ini,.json,.txt,.md" class="hidden" onchange="handleLocalFileImport(event)" />
 
   <!-- CONTENEDOR PRINCIPAL MOBILE-FIRST (100% H, máx 480px) -->
   <div id="app-shell" class="h-full w-full max-w-[480px] bg-[#0F172A] flex flex-col overflow-hidden relative border-x border-slate-800 shadow-2xl">
@@ -438,7 +450,7 @@
                 <span class="font-mono text-[10px] font-extrabold uppercase text-sky-400">VSCodium + PlatformIO</span>
               </div>
               <h3 id="hub-active-cs-title" class="text-sm font-black text-white truncate mt-0.5">CodeSpace: telemetria-esp32</h3>
-              <p class="text-[11px] text-slate-400 truncate mt-0.5">src/main.cpp · platformio.ini · Build &amp; Sandbox</p>
+              <p class="text-[11px] text-slate-400 truncate mt-0.5">src/main.cpp · include/pins.h · platformio.ini</p>
             </div>
             <button onclick="navigateToSection('codespaces')"
               class="shrink-0 min-h-[42px] px-3.5 rounded-2xl duo-btn duo-btn-sky font-extrabold text-xs">
@@ -499,7 +511,7 @@
             </div>
             <button onclick="toggleNewCodeSpaceModal(true)"
               class="shrink-0 h-8 px-2.5 rounded-xl bg-sky-500/20 border border-sky-500/45 text-sky-300 font-extrabold text-[11px]">
-              + Nuevo
+              + Proyecto
             </button>
             <button onclick="importBlocksIntoActiveCodeSpace()"
               class="shrink-0 h-8 px-2 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-extrabold text-[10px]"
@@ -508,8 +520,24 @@
             </button>
           </div>
 
-          <!-- Explorador de Archivos del Proyecto en Pestañas -->
-          <div id="cs-file-tabs" class="shrink-0 bg-[#090C10] border-b border-slate-800 px-2 py-1.5 flex items-center gap-1 overflow-x-auto"></div>
+          <!-- Explorador de Archivos Vinculados del Proyecto + Acciones de Archivo -->
+          <div class="shrink-0 bg-[#090C10] border-b border-slate-800 px-2 py-1.5 flex items-center justify-between gap-1.5">
+            <div id="cs-file-tabs" class="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto"></div>
+            <div class="shrink-0 flex items-center gap-1">
+              <button onclick="createLinkedFileInCodeSpace()" title="Nuevo archivo en el proyecto"
+                class="h-7 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 font-mono text-[10px] font-bold">
+                +Arch
+              </button>
+              <button onclick="triggerLocalFileImport()" title="Importar archivo desde el dispositivo"
+                class="h-7 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-mono text-[10px] font-bold">
+                📂
+              </button>
+              <button onclick="exportActiveCodeSpaceFile()" title="Descargar archivo activo"
+                class="h-7 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-300 font-mono text-[10px] font-bold">
+                💾
+              </button>
+            </div>
+          </div>
 
           <!-- Mini Monitor de Hardware en Vivo dentro de CodeSpaces -->
           <div class="shrink-0 bg-[#161B22]/90 border-b border-slate-800 px-2.5 py-1.5 flex items-center justify-between gap-1.5 font-mono text-[10px]">
@@ -1235,7 +1263,6 @@
 
     // =========================================================================
     // 2. REGISTRO DE 7 SUPERUSUARIOS (1 HUMANO + 6 BOTS INSTRUCTORES TÁCTICOS)
-    //    Nota: Las claves NO se muestran en la UI; se validan en el campo password
     // =========================================================================
     const SUPERUSER_ROSTER = {
       '$@Portal': {
@@ -1561,7 +1588,7 @@
     }
 
     // =========================================================================
-    // 6. PLANTILLAS DE CODESPACES (VSCODIUM + PLATFORMIO IDE)
+    // 6. PLANTILLAS Y VINCULACIÓN DE ARCHIVOS DE CODESPACES (PLATFORMIO IDE)
     // =========================================================================
     function createCodeSpaceProjectObj(id, name, boardId, framework, libs) {
       const b = BOARDS[boardId] || BOARDS.esp32s3;
@@ -1571,15 +1598,15 @@
 
       const mainCode = isPython
         ? (framework === 'gpiozero'
-          ? `# Proyecto: ${name} (${b.name} · Python 3 gpiozero)\nfrom gpiozero import LED, AngularServo\nimport time\n\nled = LED(${b.pins.led})\nservo = AngularServo(${b.pins.servo}, min_angle=0, max_angle=180)\n\nprint("Iniciando ${name} en ${b.name}")\nwhile True:\n    led.on()\n    servo.angle = 90\n    print("Estado: ACTIVO | Servo 90 deg")\n    time.sleep(0.5)\n    led.off()\n    servo.angle = 0\n    print("Estado: REPOSO | Servo 0 deg")\n    time.sleep(0.5)\n`
-          : `# Proyecto: ${name} (${b.name} · MicroPython)\nfrom machine import Pin, PWM\nimport time\n\nled = Pin(${b.pins.led}, Pin.OUT)\nservo = PWM(Pin(${b.pins.servo}), freq=50)\n\nprint("Boot MicroPython: ${name}")\nwhile True:\n    led.value(1)\n    servo.duty(77)  # 90 grados\n    print("Pulso HIGH | Servo 90°")\n    time.sleep_ms(500)\n    led.value(0)\n    servo.duty(26)  # 0 grados\n    print("Pulso LOW | Servo 0°")\n    time.sleep_ms(500)\n`)
+          ? `# Proyecto: ${name} (${b.name} · Python 3 gpiozero)\nfrom gpiozero import LED, AngularServo\nimport pins\nimport time\n\nled = LED(pins.PIN_LED)\nservo = AngularServo(pins.PIN_SERVO, min_angle=0, max_angle=180)\n\nprint("Iniciando ${name} en ${b.name}")\nwhile True:\n    led.on()\n    servo.angle = 90\n    print("Estado: ACTIVO | Servo 90 deg")\n    time.sleep(0.5)\n    led.off()\n    servo.angle = 0\n    print("Estado: REPOSO | Servo 0 deg")\n    time.sleep(0.5)\n`
+          : `# Proyecto: ${name} (${b.name} · MicroPython)\nfrom machine import Pin, PWM\nimport pins\nimport time\n\nled = Pin(pins.PIN_LED, Pin.OUT)\nservo = PWM(Pin(pins.PIN_SERVO), freq=50)\n\nprint("Boot MicroPython: ${name}")\nwhile True:\n    led.value(1)\n    servo.duty(77)  # 90 grados\n    print("Pulso HIGH | Servo 90°")\n    time.sleep_ms(500)\n    led.value(0)\n    servo.duty(26)  # 0 grados\n    print("Pulso LOW | Servo 0°")\n    time.sleep_ms(500)\n`)
         : `// Proyecto: ${name} (${b.name} · PlatformIO C++)\n#include <Arduino.h>\n#include "pins.h"\n\nvoid setup() {\n  Serial.begin(115200);\n  pinMode(PIN_LED, OUTPUT);\n  Serial.println("Sistema ${name} listo en ${b.name}");\n}\n\nvoid loop() {\n  digitalWrite(PIN_LED, HIGH);\n  Serial.println("LED HIGH -> ${b.voltage}");\n  delay(500);\n  digitalWrite(PIN_LED, LOW);\n  Serial.println("LED LOW -> 0V");\n  delay(500);\n}\n`;
 
       const iniContent = `; PlatformIO Project Configuration File\n[env:${b.pioBoard}]\nplatform = ${b.pioPlatform}\nboard = ${b.pioBoard}\nframework = ${framework}\nmonitor_speed = 115200\nlib_deps =\n${libs.split(',').map(l => '  ' + l.trim()).filter(l => l.trim()).join('\n')}\n`;
 
       const pinsContent = isPython
-        ? `# Mapeo de Pines para ${b.name} (${b.voltage})\nPIN_LED = ${b.pins.led}\nPIN_BTN = ${b.pins.btn}\nPIN_SERVO = ${b.pins.servo}\nPIN_STEP = ${b.pins.step}\nPIN_DIR = ${b.pins.dir}\nPIN_SDA = "${b.pins.sda}"\nPIN_SCL = "${b.pins.scl}"\n`
-        : `#pragma once\n// Mapeo de Hardware para ${b.name} (${b.voltage})\n#define PIN_LED   ${b.pins.led}\n#define PIN_BTN   ${b.pins.btn}\n#define PIN_SERVO ${b.pins.servo}\n#define PIN_STEP  ${b.pins.step}\n#define PIN_DIR   ${b.pins.dir}\n#define PIN_TRIG  ${b.pins.trig}\n#define PIN_ECHO  ${b.pins.echo}\n`;
+        ? `# Mapeo de Pines Vinculado para ${b.name} (${b.voltage})\nPIN_LED = ${b.pins.led}\nPIN_BTN = ${b.pins.btn}\nPIN_SERVO = ${b.pins.servo}\nPIN_STEP = ${b.pins.step}\nPIN_DIR = ${b.pins.dir}\nPIN_SDA = "${b.pins.sda}"\nPIN_SCL = "${b.pins.scl}"\n`
+        : `#pragma once\n// Mapeo de Hardware Vinculado para ${b.name} (${b.voltage})\n#define PIN_LED   ${b.pins.led}\n#define PIN_BTN   ${b.pins.btn}\n#define PIN_SERVO ${b.pins.servo}\n#define PIN_STEP  ${b.pins.step}\n#define PIN_DIR   ${b.pins.dir}\n#define PIN_TRIG  ${b.pins.trig}\n#define PIN_ECHO  ${b.pins.echo}\n`;
 
       const readmeContent = `# ${name}\n\n- **Placa Target:** ${b.name} (${b.voltage})\n- **Framework:** ${framework}\n- **Velocidad Serial:** 115200 baud\n\n## Notas Eléctricas\n${b.notes}\n`;
 
@@ -1600,11 +1627,61 @@
       };
     }
 
+    // Resuelve las vinculaciones reales entre archivos de un CodeSpace (#include "..." / import ...)
+    function resolveLinkedProjectFiles(cs) {
+      const b = BOARDS[cs.boardId] || BOARDS.esp32s3;
+      const isPy = cs.framework === 'micropython' || cs.framework === 'gpiozero';
+      const mainFile = isPy ? 'main.py' : 'src/main.cpp';
+      const mainCode = cs.files[mainFile] || '';
+      const resolvedPins = { ...b.pins };
+      const missingLinks = [];
+      const linkedFiles = [];
+
+      if (!isPy) {
+        // Verificar #include "archivo.h"
+        const localIncludes = [...mainCode.matchAll(/#include\s+"([^"]+)"/g)].map(m => m[1]);
+        for (const inc of localIncludes) {
+          const matchedKey = Object.keys(cs.files).find(k => k === inc || k.endsWith('/' + inc));
+          if (!matchedKey) {
+            missingLinks.push(`${mainFile}: No se encuentra el archivo vinculado "${inc}"`);
+          } else {
+            linkedFiles.push(matchedKey);
+            const hdr = cs.files[matchedKey] || '';
+            const defs = [...hdr.matchAll(/#define\s+PIN_([A-Z]+)\s+([A-Za-z0-9_]+)/g)];
+            defs.forEach(d => {
+              const key = d[1].toLowerCase();
+              if (Object.prototype.hasOwnProperty.call(resolvedPins, key)) {
+                resolvedPins[key] = d[2];
+              }
+            });
+          }
+        }
+      } else {
+        // Verificar import pins / from pins import ...
+        if (/\b(?:import\s+pins|from\s+pins\s+import)\b/.test(mainCode)) {
+          if (!cs.files['pins.py']) {
+            missingLinks.push(`${mainFile}: Falta el módulo vinculado "pins.py"`);
+          } else {
+            linkedFiles.push('pins.py');
+            const pyDefs = [...cs.files['pins.py'].matchAll(/PIN_([A-Z]+)\s*=\s*["']?([A-Za-z0-9_]+)["']?/g)];
+            pyDefs.forEach(d => {
+              const key = d[1].toLowerCase();
+              if (Object.prototype.hasOwnProperty.call(resolvedPins, key)) {
+                resolvedPins[key] = d[2];
+              }
+            });
+          }
+        }
+      }
+
+      return { mainFile, mainCode, resolvedPins, missingLinks, linkedFiles };
+    }
+
     // =========================================================================
     // 7. ESTADO GLOBAL DE LA APLICACIÓN
     // =========================================================================
     const state = {
-      user: null, // { username, callsign, isAdmin, isBot, roleLabel, specialty, avatar }
+      user: null,
       activeBoard: 'esp32s3',
       activeSection: 'inicio',
       mode: 'ruta',
@@ -1639,7 +1716,6 @@
         measuredCm: 25
       },
       feedbackAction: null,
-      // CodeSpaces (VSCodium + PlatformIO)
       codeSpaces: [
         createCodeSpaceProjectObj('cs-1', 'telemetria-esp32', 'esp32s3', 'arduino', 'waspinator/AccelStepper, adafruit/Adafruit SSD1306'),
         createCodeSpaceProjectObj('cs-2', 'control-nema17-r4', 'uno_r4', 'arduino', 'waspinator/AccelStepper, marcoschwartz/LiquidCrystal_I2C'),
@@ -1647,14 +1723,12 @@
       ],
       activeCodeSpaceId: 'cs-1',
       pendingCopilotPatch: null,
-      // Protoboard Interactiva
       proto: {
         tool: 'inspect',
         pendingWireStart: null,
         wires: [],
         components: []
       },
-      // Base Operativa (Muro con código compartido + 6 Bots Instructores + Ranking)
       feedCodeBoxOpen: false,
       feedPosts: [
         {
@@ -1810,7 +1884,6 @@
       });
     };
 
-    // PESTAÑA SUPERUSUARIO: Evalúa únicamente la Clave de Acceso Operador (campo password)
     window.handleSuperuserLogin = function(e) {
       e.preventDefault();
       const keyInput = document.getElementById('super-operator-key');
@@ -1975,7 +2048,6 @@
       const cs = getActiveCodeSpace();
       if (!cs) return;
 
-      // Renderizar pestañas de archivos del proyecto
       const fileKeys = Object.keys(cs.files);
       if (!fileKeys.includes(cs.activeFile)) cs.activeFile = fileKeys[0];
 
@@ -1985,7 +2057,7 @@
         return `
           <button onclick="selectCodeSpaceFile('${fname}')"
             class="shrink-0 px-2.5 py-1.5 rounded-lg font-mono text-[11px] font-bold flex items-center gap-1 border ${isAct ? 'bg-[#161B22] border-sky-500/60 text-sky-300' : 'bg-transparent border-transparent text-slate-400 hover:text-slate-200'}">
-            <span>${icon}</span><span>${fname}</span>
+            <span>${icon}</span><span>${escapeHtml(fname)}</span>
           </button>
         `;
       }).join('');
@@ -2014,6 +2086,65 @@
       if (!cs) return;
       cs.activeFile = fname;
       renderCodeSpacesView();
+    };
+
+    window.createLinkedFileInCodeSpace = function() {
+      const cs = getActiveCodeSpace();
+      if (!cs) return;
+      const raw = window.prompt('Ruta/nombre del archivo vinculado (ej. include/sensores.h o utils.py):');
+      if (!raw) return;
+      const fname = raw.trim().replace(/^\/+/, '');
+      if (!fname) return;
+      if (!Object.prototype.hasOwnProperty.call(cs.files, fname)) {
+        cs.files[fname] = fname.endsWith('.h')
+          ? `#pragma once\n// Archivo vinculado: ${fname}\n`
+          : (fname.endsWith('.py') ? `# Módulo vinculado: ${fname}\n` : `// ${fname}\n`);
+      }
+      cs.activeFile = fname;
+      soundEngine.play('success');
+      renderCodeSpacesView();
+      showMiniToast(`Archivo vinculado: ${fname}`);
+    };
+
+    window.triggerLocalFileImport = function() {
+      soundEngine.play('click');
+      document.getElementById('cs-file-importer').click();
+    };
+
+    window.handleLocalFileImport = function(e) {
+      const file = e.target.files && e.target.files[0];
+      const cs = getActiveCodeSpace();
+      if (!file || !cs) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const targetPath = file.name.endsWith('.h') ? `include/${file.name}`
+          : (file.name.endsWith('.cpp') ? `src/${file.name}` : file.name);
+        cs.files[targetPath] = String(evt.target.result || '');
+        cs.activeFile = targetPath;
+        soundEngine.play('success');
+        renderCodeSpacesView();
+        showMiniToast(`Importado: ${targetPath}`);
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    };
+
+    window.exportActiveCodeSpaceFile = function() {
+      const cs = getActiveCodeSpace();
+      if (!cs) return;
+      const content = cs.files[cs.activeFile] || '';
+      const baseName = cs.activeFile.split('/').pop() || 'codigo.txt';
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = baseName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      soundEngine.play('success');
+      showMiniToast(`Descargado: ${baseName}`);
     };
 
     window.handleCodeEditorInput = function() {
@@ -2090,42 +2221,45 @@
       showMiniToast(`Bloques transpiles a ${targetFile}`);
     };
 
-    // --- PlatformIO Build (Compilación y Validación Sintáctica) ---
+    // --- PlatformIO Build (Compilación y Validación de Vinculaciones) ---
     window.runPlatformIOBuild = function() {
       const cs = getActiveCodeSpace();
       if (!cs) return;
       const b = BOARDS[cs.boardId] || BOARDS.esp32s3;
-      const mainFile = cs.files['src/main.cpp'] !== undefined ? 'src/main.cpp' : 'main.py';
-      const code = cs.files[mainFile] || '';
       const ini = cs.files['platformio.ini'] || '';
+      const resolved = resolveLinkedProjectFiles(cs);
+      const { mainFile, mainCode, missingLinks, linkedFiles } = resolved;
 
       openCsDrawer('build');
       const outEl = document.getElementById('cs-drawer-build');
 
-      const errors = [];
+      const errors = [...missingLinks];
       if (!ini.includes('[env:')) errors.push('platformio.ini: Falta sección [env:...]');
       if (mainFile.endsWith('.cpp')) {
-        const openBraces = (code.match(/\{/g) || []).length;
-        const closeBraces = (code.match(/\}/g) || []).length;
+        const openBraces = (mainCode.match(/\{/g) || []).length;
+        const closeBraces = (mainCode.match(/\}/g) || []).length;
         if (openBraces !== closeBraces) errors.push(`${mainFile}: Llaves desbalanceadas ({ = ${openBraces}, } = ${closeBraces})`);
-        if (!code.includes('setup()')) errors.push(`${mainFile}: Falta definición void setup()`);
-        if (!code.includes('loop()')) errors.push(`${mainFile}: Falta definición void loop()`);
+        if (!mainCode.includes('setup()')) errors.push(`${mainFile}: Falta definición void setup()`);
+        if (!mainCode.includes('loop()')) errors.push(`${mainFile}: Falta definición void loop()`);
       } else {
-        const openParens = (code.match(/\(/g) || []).length;
-        const closeParens = (code.match(/\)/g) || []).length;
+        const openParens = (mainCode.match(/\(/g) || []).length;
+        const closeParens = (mainCode.match(/\)/g) || []).length;
         if (openParens !== closeParens) errors.push(`${mainFile}: Paréntesis desbalanceados`);
       }
 
       if (errors.length > 0) {
         soundEngine.play('error');
         outEl.innerHTML = `<span class="text-sky-400">Processing ${b.pioBoard} (platform: ${b.pioPlatform}; board: ${b.pioBoard}; framework: ${cs.framework})</span>\n` +
-          `<span class="text-rose-400 font-bold">*** [FAILED] Errores de compilación detectados:</span>\n` +
+          `<span class="text-rose-400 font-bold">*** [FAILED] Errores de compilación/vinculación detectados:</span>\n` +
           errors.map(e => `<span class="text-rose-300">  ✖ ${escapeHtml(e)}</span>`).join('\n');
       } else {
         soundEngine.play('success');
-        const ramPct = Math.min(82, 12 + Math.round(code.length / 45));
-        const flashPct = Math.min(88, 18 + Math.round(code.length / 30));
+        const totalChars = Object.values(cs.files).reduce((acc, txt) => acc + txt.length, 0);
+        const ramPct = Math.min(82, 12 + Math.round(totalChars / 60));
+        const flashPct = Math.min(88, 18 + Math.round(totalChars / 40));
+        const linkNote = linkedFiles.length ? `Linked: ${linkedFiles.join(', ')}\n` : '';
         outEl.innerHTML = `<span class="text-sky-400">Processing ${b.pioBoard} (platform: ${b.pioPlatform}; framework: ${cs.framework})</span>\n` +
+          `<span class="text-cyan-300">${escapeHtml(linkNote)}</span>` +
           `Checking size .pio/build/${b.pioBoard}/firmware.elf\n` +
           `RAM:   [==        ]  ${ramPct}.4% (used 48120 bytes)\n` +
           `Flash: [===       ]  ${flashPct}.2% (used 342180 bytes)\n` +
@@ -2133,33 +2267,40 @@
       }
     };
 
-    // --- Run Sandbox (Interpreta el código del editor y actualiza Hardware + Serial) ---
+    // --- Run Sandbox (Interpreta el código + archivos vinculados y actualiza Hardware) ---
     window.runCodeSpaceSandbox = function() {
       const cs = getActiveCodeSpace();
       if (!cs) return;
-      const mainFile = cs.files['src/main.cpp'] !== undefined ? 'src/main.cpp' : 'main.py';
-      const code = cs.files[mainFile] || '';
+      const { mainCode, resolvedPins, linkedFiles } = resolveLinkedProjectFiles(cs);
 
       openCsDrawer('serial');
       soundEngine.play('success');
 
-      // Analizar instrucciones clave en el código del editor para reflejarlas en el Sandbox
-      if (/HIGH|led\.on\(\)|led\.value\(1\)/i.test(code)) state.hw.ledHigh = true;
-      else if (/LOW|led\.off\(\)|led\.value\(0\)/i.test(code)) state.hw.ledHigh = false;
+      // Actualizar etiquetas de pines si fueron modificadas en pins.h / pins.py
+      document.getElementById('hw-led-pin-tag').textContent = `LED ${resolvedPins.led}`;
+      document.getElementById('hw-servo-pin-tag').textContent = `SRV ${resolvedPins.servo}`;
+      document.getElementById('hw-btn-pin-tag').textContent = `PIN ${resolvedPins.btn}`;
 
-      const servoMatch = code.match(/(?:servo\.write|servo\.angle\s*=)\s*\(?(\d+)/i);
+      if (/HIGH|led\.on\(\)|led\.value\(1\)/i.test(mainCode)) state.hw.ledHigh = true;
+      else if (/LOW|led\.off\(\)|led\.value\(0\)/i.test(mainCode)) state.hw.ledHigh = false;
+
+      const servoMatch = mainCode.match(/(?:servo\.write|servo\.angle\s*=)\s*\(?(\d+)/i);
       if (servoMatch) state.hw.servoAngle = Math.min(180, Math.max(0, Number(servoMatch[1])));
 
-      const nemaMatch = code.match(/(?:move|moveTo)\s*\(\s*(-?\d+)/i);
+      const nemaMatch = mainCode.match(/(?:move|moveTo)\s*\(\s*(-?\d+)/i);
       if (nemaMatch) {
         const st = Number(nemaMatch[1]);
         state.hw.nemaSteps += st;
         state.hw.nemaRotDeg += st * 1.8;
       }
 
-      const printMatches = [...code.matchAll(/(?:Serial\.println|print|oled\.println|lcd\.print)\s*\(\s*["']([^"']+)["']\s*\)/g)];
+      const printMatches = [...mainCode.matchAll(/(?:Serial\.println|print|oled\.println|lcd\.print)\s*\(\s*["']([^"']+)["']\s*\)/g)];
       const serialLog = document.getElementById('cs-serial-log');
       const nowStr = new Date().toLocaleTimeString('es-MX', { hour12: false });
+
+      if (linkedFiles.length > 0) {
+        serialLog.innerHTML += `<div class="text-cyan-400">[${nowStr}] Vínculos activos: ${escapeHtml(linkedFiles.join(', '))} (LED=${resolvedPins.led}, SRV=${resolvedPins.servo})</div>`;
+      }
 
       if (printMatches.length > 0) {
         printMatches.forEach(m => {
@@ -2235,7 +2376,6 @@
         const explanationOnly = reply.replace(/```[\s\S]*?```/, '').trim();
         out.innerHTML = `<div class="text-slate-200">${escapeHtml(explanationOnly || 'Código optimizado listo para aplicar al editor.')}</div>`;
       } else {
-        // Fallback inteligente con código listo para aplicar
         state.pendingCopilotPatch = currentCode + `\n// Optimizado por IA Copilot para ${b.name} (${b.voltage})\n`;
         applyBtn.classList.remove('hidden');
         out.innerHTML = `<div class="text-slate-200">${escapeHtml(reply)}</div>`;
@@ -2267,7 +2407,6 @@
       });
     };
 
-    // Transpilador de Bloques -> Código C++ o Python para CodeSpaces
     function transpileBlocksToSource(blocks, lang) {
       const b = BOARDS[state.activeBoard];
       const lines = [];
@@ -2276,13 +2415,14 @@
         lines.push(`#include <Arduino.h>`);
         lines.push(`#include <Servo.h>`);
         lines.push(`#include <AccelStepper.h>`);
+        lines.push(`#include "pins.h"`);
         lines.push(`Servo miServo;`);
-        lines.push(`AccelStepper nema17(AccelStepper::DRIVER, ${b.pins.step}, ${b.pins.dir});`);
+        lines.push(`AccelStepper nema17(AccelStepper::DRIVER, PIN_STEP, PIN_DIR);`);
         lines.push(`float distancia_cm = 25.0;`);
         const emit = (list, ind) => {
           for (const item of list) {
             const p = item.params;
-            if (item.type === 'led_write') lines.push(`${ind}digitalWrite(${b.pins.led}, ${p.state});`);
+            if (item.type === 'led_write') lines.push(`${ind}digitalWrite(PIN_LED, ${p.state});`);
             else if (item.type === 'servo_write') lines.push(`${ind}miServo.write(${p.angle});`);
             else if (item.type === 'stepper_move') lines.push(`${ind}nema17.move(${p.dir === 'CCW' ? -p.steps : p.steps}); nema17.runToPosition();`);
             else if (item.type === 'oled_print') lines.push(`${ind}Serial.println("OLED: ${p.text}");`);
@@ -2303,8 +2443,8 @@
         };
         lines.push(`void setup() {`);
         lines.push(`  Serial.begin(115200);`);
-        lines.push(`  pinMode(${b.pins.led}, OUTPUT);`);
-        lines.push(`  miServo.attach(${b.pins.servo});`);
+        lines.push(`  pinMode(PIN_LED, OUTPUT);`);
+        lines.push(`  miServo.attach(PIN_SERVO);`);
         emit(blocks.find(x => x.type === 'setup')?.children || [], '  ');
         lines.push(`}`);
         lines.push(`void loop() {`);
@@ -2313,9 +2453,10 @@
       } else {
         lines.push(`# Generado desde Bloques · ${b.name}`);
         lines.push(`from machine import Pin, PWM`);
+        lines.push(`import pins`);
         lines.push(`import time`);
-        lines.push(`led = Pin(${b.pins.led}, Pin.OUT)`);
-        lines.push(`servo = PWM(Pin(${b.pins.servo}), freq=50)`);
+        lines.push(`led = Pin(pins.PIN_LED, Pin.OUT)`);
+        lines.push(`servo = PWM(Pin(pins.PIN_SERVO), freq=50)`);
         lines.push(`while True:`);
         const loopItems = blocks.find(x => x.type === 'loop')?.children || [];
         if (loopItems.length === 0) lines.push(`    pass`);
@@ -3153,7 +3294,6 @@
       showMiniToast(`Snippet cargado en ${targetFile}`);
     };
 
-    // Respuesta automática de uno de los 6 Bots Instructores declarados
     window.triggerInstructorBotReply = function(postIdx) {
       const post = state.feedPosts[postIdx];
       if (!post) return;
@@ -3398,7 +3538,7 @@
     }
 
     // =========================================================================
-    // 16. UTILIDADES Y ARRANQUE
+    // 16. UTILIDADES, REGISTRO PWA Y ARRANQUE
     // =========================================================================
     function escapeHtml(str) {
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -3421,6 +3561,11 @@
         renderCodeSpacesView();
         syncHardwareVisuals();
 
+        // Registro defensivo de Service Worker (solo en HTTP/HTTPS)
+        if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.protocol === 'http:')) {
+          navigator.serviceWorker.register('./sw.js').catch(() => {});
+        }
+
         const saved = SafeStorage.get('mecatro_session_v5');
         if (saved) {
           const parsed = JSON.parse(saved);
@@ -3432,6 +3577,7 @@
     });
   </script>
 
+  <!-- Interceptor de API Key de Gemini en almacenamiento local -->
   <script>
   (function () {
     const STORAGE_KEY = 'mb_gemini_api_key';
