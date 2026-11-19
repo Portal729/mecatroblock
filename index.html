@@ -3431,5 +3431,49 @@
       }
     });
   </script>
+
+  <script>
+  (function () {
+    const STORAGE_KEY = 'mb_gemini_api_key';
+
+    window.getMecatroGeminiKey = function () {
+      let key = '';
+      try { key = localStorage.getItem(STORAGE_KEY) || ''; } catch (e) {}
+      if (!key) {
+        const input = window.prompt(
+          'Pega tu Gemini API Key de Google AI Studio (se guardará solo en este dispositivo):'
+        );
+        if (input && input.trim()) {
+          key = input.trim();
+          try { localStorage.setItem(STORAGE_KEY, key); } catch (e) {}
+        }
+      }
+      return key;
+    };
+
+    const nativeFetch = window.fetch;
+    window.fetch = async function (resource, init) {
+      let url = typeof resource === 'string' ? resource : (resource && resource.url) || '';
+      if (url.includes('generativelanguage.googleapis.com')) {
+        const apiKey = window.getMecatroGeminiKey();
+        const opts = Object.assign({}, init);
+        const headers = new Headers(opts.headers || {});
+        if (apiKey) {
+          headers.set('x-goog-api-key', apiKey);
+          url = url.includes('key=')
+            ? url.replace(/key=[^&]*/, 'key=' + encodeURIComponent(apiKey))
+            : url + (url.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(apiKey);
+        }
+        opts.headers = headers;
+        const response = await nativeFetch.call(this, url, opts);
+        if (response.status === 400 || response.status === 401 || response.status === 403) {
+          try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+        }
+        return response;
+      }
+      return nativeFetch.call(this, resource, init);
+    };
+  })();
+  </script>
 </body>
 </html>
