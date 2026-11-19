@@ -1,0 +1,3435 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>MecatroBlock IDE — CodeSpaces, Multi-Placa y Base Operativa</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    /* =====================================================================
+       ARQUITECTURA MOBILE-FIRST ESTRICTA:
+       - height: 100% (evita saltos de barra de direcciones móvil)
+       - overflow-anchor: none (cero auto-scroll al insertar o ejecutar loops)
+       - touch-action: manipulation (respuesta táctil instantánea sin zoom)
+       ===================================================================== */
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #050912;
+      color: #F8FAFC;
+      font-family: 'Inter', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .hidden { display: none !important; }
+
+    button, select, input, textarea, .pb-node {
+      touch-action: manipulation;
+    }
+
+    .stable-scroll {
+      flex: 1 1 0%;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      overflow-anchor: none !important;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+      touch-action: pan-y;
+    }
+
+    .stable-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
+    .stable-scroll::-webkit-scrollbar-track { background: transparent; }
+    .stable-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+
+    /* Botones táctiles con relieve tipo juego */
+    .duo-btn {
+      transition: transform 0.08s ease, box-shadow 0.08s ease, background-color 0.15s ease;
+    }
+    .duo-btn:active:not(:disabled) { transform: translateY(2px); }
+    .duo-btn-emerald { background-color: #10B981; box-shadow: 0 4px 0 #059669; color: #042F2E; }
+    .duo-btn-emerald:active:not(:disabled) { box-shadow: 0 1px 0 #059669; }
+    .duo-btn-sky { background-color: #38BDF8; box-shadow: 0 4px 0 #0284C7; color: #082F49; }
+    .duo-btn-sky:active:not(:disabled) { box-shadow: 0 1px 0 #0284C7; }
+    .duo-btn-amber { background-color: #FBBF24; box-shadow: 0 4px 0 #D97706; color: #1E1B4B; }
+    .duo-btn-amber:active:not(:disabled) { box-shadow: 0 1px 0 #D97706; }
+    .duo-btn-violet { background-color: #8B5CF6; box-shadow: 0 4px 0 #6D28D9; color: #FFFFFF; }
+    .duo-btn-violet:active:not(:disabled) { box-shadow: 0 1px 0 #6D28D9; }
+
+    .target-active {
+      box-shadow: 0 0 0 2px #38BDF8, 0 0 14px rgba(56, 189, 248, 0.25);
+      border-color: #38BDF8 !important;
+    }
+
+    @keyframes execPulse {
+      0%, 100% { box-shadow: 0 0 0 2px #10B981, 0 0 10px rgba(16, 185, 129, 0.45); }
+      50% { box-shadow: 0 0 0 2px #6EE7B7, 0 0 18px rgba(16, 185, 129, 0.85); }
+    }
+    .block-running {
+      animation: execPulse 0.9s infinite ease-in-out;
+      border-color: #10B981 !important;
+      background-color: rgba(16, 185, 129, 0.14) !important;
+    }
+
+    @keyframes popIn {
+      0% { opacity: 0.4; transform: scale(0.97); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    .block-pop { animation: popIn 0.16s ease-out; }
+
+    .block-select {
+      background-color: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(148, 163, 184, 0.45);
+      color: #F8FAFC;
+      border-radius: 0.5rem;
+      padding: 0.25rem 0.45rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 600;
+      min-height: 32px;
+      cursor: pointer;
+    }
+    .block-select:focus { outline: none; border-color: #38BDF8; }
+
+    /* Editor de Código estilo VSCodium */
+    .vsc-editor-wrap {
+      background-color: #0D1117;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .vsc-textarea {
+      background: transparent;
+      color: #E6EDF3;
+      caret-color: #38BDF8;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 20px;
+      tab-size: 2;
+      resize: none;
+      outline: none;
+      white-space: pre;
+      overflow-x: auto;
+      overflow-y: auto;
+      overflow-anchor: none !important;
+    }
+    .vsc-gutter {
+      background-color: #090C10;
+      color: #484F58;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      line-height: 20px;
+      user-select: none;
+      text-align: right;
+    }
+
+    input[type="range"].sonic-range {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 7px;
+      border-radius: 999px;
+      background: #334155;
+    }
+    input[type="range"].sonic-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #FBBF24;
+      border: 3px solid #0F172A;
+      cursor: pointer;
+    }
+
+    /* Nodos de la Protoboard Interactiva */
+    .pb-node {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: 3px;
+      background-color: #0B1120;
+      border: 1px solid #475569;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+      z-index: 10;
+    }
+    .pb-node::after {
+      content: '';
+      width: 40%;
+      height: 40%;
+      border-radius: 1px;
+      background-color: #1E293B;
+    }
+    .pb-node-net {
+      background-color: rgba(16, 185, 129, 0.35) !important;
+      border-color: #10B981 !important;
+      box-shadow: 0 0 6px rgba(16, 185, 129, 0.85);
+    }
+    .pb-node-net::after { background-color: #6EE7B7 !important; }
+    .pb-node-sel {
+      background-color: #FBBF24 !important;
+      border-color: #FFFFFF !important;
+      transform: scale(1.2);
+      z-index: 20;
+    }
+  </style>
+</head>
+<body class="flex justify-center">
+
+  <!-- CONTENEDOR PRINCIPAL MOBILE-FIRST (100% H, máx 480px) -->
+  <div id="app-shell" class="h-full w-full max-w-[480px] bg-[#0F172A] flex flex-col overflow-hidden relative border-x border-slate-800 shadow-2xl">
+
+    <!-- =================================================================== -->
+    <!-- PANTALLA 0: ACCESO (INVITADO / ALUMNO / SUPERUSUARIO SILENCIOSO)    -->
+    <!-- =================================================================== -->
+    <div id="auth-screen" class="h-full w-full flex flex-col bg-[#090D16] z-50 overflow-hidden">
+      <div class="stable-scroll px-5 pt-7 pb-8 flex flex-col justify-between">
+        <!-- Cabecera Visual -->
+        <div class="text-center space-y-2">
+          <div class="w-16 h-16 mx-auto rounded-3xl bg-gradient-to-br from-emerald-400 via-cyan-400 to-sky-500 p-0.5 shadow-lg">
+            <div class="w-full h-full bg-slate-950 rounded-[22px] flex items-center justify-center">
+              <svg class="w-9 h-9 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="4" width="16" height="16" rx="3"></rect>
+                <rect x="9" y="9" width="6" height="6" rx="1"></rect>
+                <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"></path>
+              </svg>
+            </div>
+          </div>
+          <div>
+            <span class="px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 font-mono text-[10px] font-bold uppercase tracking-wider">
+              VSCodium · PlatformIO · Bloques · Protoboard
+            </span>
+            <h1 class="text-2xl font-black text-white tracking-tight mt-1.5">MecatroBlock IDE</h1>
+            <p class="text-xs text-slate-400 max-w-[300px] mx-auto leading-relaxed mt-1">
+              Entorno móvil de mecatrónica embebida para ESP32, Arduino R3/R4 y Raspberry Pi.
+            </p>
+          </div>
+        </div>
+
+        <!-- Tarjeta de Acceso con 3 Pestañas -->
+        <div class="my-5 bg-slate-900/95 border border-slate-800 rounded-3xl p-4 shadow-xl space-y-4">
+          <div class="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-2xl border border-slate-800">
+            <button id="auth-tab-guest" onclick="switchAuthMode('guest')"
+              class="min-h-[40px] rounded-xl text-[11px] font-extrabold transition bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+              🚀 Invitado
+            </button>
+            <button id="auth-tab-student" onclick="switchAuthMode('student')"
+              class="min-h-[40px] rounded-xl text-[11px] font-extrabold transition text-slate-400 hover:text-slate-200 border border-transparent">
+              🎓 Alumno
+            </button>
+            <button id="auth-tab-super" onclick="switchAuthMode('super')"
+              class="min-h-[40px] rounded-xl text-[11px] font-extrabold transition text-slate-400 hover:text-slate-200 border border-transparent">
+              🛡️ Superusuario
+            </button>
+          </div>
+
+          <!-- PESTAÑA A: INVITADO (1 TOQUE) -->
+          <form id="auth-form-guest" onsubmit="handleGuestLogin(event)" class="space-y-3">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-300 mb-1">Apodo en el taller (opcional)</label>
+              <input id="guest-name-input" type="text" maxlength="20" placeholder="Ej. Alex_Maker"
+                class="w-full min-h-[46px] rounded-2xl bg-slate-950 border border-slate-700 px-3.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400" />
+            </div>
+            <button type="submit"
+              class="w-full min-h-[48px] rounded-2xl duo-btn duo-btn-emerald font-extrabold text-sm tracking-wide">
+              Entrar en 1 Toque →
+            </button>
+          </form>
+
+          <!-- PESTAÑA B: ALUMNO (USUARIO Y CONTRASEÑA) -->
+          <form id="auth-form-student" onsubmit="handleStudentLogin(event)" class="hidden space-y-3">
+            <div class="flex items-center justify-between bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800">
+              <span id="student-submode-label" class="text-[11px] font-bold text-sky-300">Cuenta de Alumno</span>
+              <button type="button" onclick="toggleStudentRegisterMode()"
+                class="text-[11px] font-extrabold text-amber-300 underline">
+                <span id="student-toggle-text">Crear cuenta</span>
+              </button>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-bold text-slate-300 mb-1">Usuario</label>
+              <input id="stu-username-input" type="text" required maxlength="24" placeholder="Tu usuario del taller"
+                class="w-full min-h-[44px] rounded-xl bg-slate-950 border border-slate-700 px-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-400" />
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-bold text-slate-300 mb-1">Contraseña</label>
+              <input id="stu-password-input" type="password" required minlength="4" placeholder="••••••••"
+                class="w-full min-h-[44px] rounded-xl bg-slate-950 border border-slate-700 px-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-400" />
+            </div>
+
+            <div id="stu-group-row" class="hidden">
+              <label class="block text-[11px] font-bold text-slate-300 mb-1">Equipo o Grupo</label>
+              <input id="stu-group-input" type="text" maxlength="20" placeholder="Ej. Mecatrónica 4A"
+                class="w-full min-h-[44px] rounded-xl bg-slate-950 border border-slate-700 px-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-400" />
+            </div>
+
+            <p id="student-error-msg" class="hidden text-xs text-rose-400 font-semibold"></p>
+
+            <button type="submit"
+              class="w-full min-h-[48px] rounded-2xl duo-btn duo-btn-sky font-extrabold text-sm tracking-wide">
+              <span id="stu-submit-text">Iniciar Sesión →</span>
+            </button>
+          </form>
+
+          <!-- PESTAÑA C: SUPERUSUARIO (SIN NOMBRES NI PISTAS — SOLO CLAVE EN CAMPO PASSWORD) -->
+          <form id="auth-form-super" onsubmit="handleSuperuserLogin(event)" class="hidden space-y-3">
+            <div>
+              <label for="super-operator-key" class="block text-[11px] font-bold text-amber-300 mb-1.5">
+                Clave de Acceso Operador
+              </label>
+              <input id="super-operator-key" type="password" required autocomplete="off" placeholder="••••••••••••"
+                class="w-full min-h-[48px] rounded-2xl bg-slate-950 border border-amber-500/40 px-3.5 text-sm font-mono text-white placeholder-slate-600 focus:outline-none focus:border-amber-400" />
+            </div>
+
+            <p id="super-error-msg" class="hidden text-xs text-rose-400 font-semibold"></p>
+
+            <button type="submit"
+              class="w-full min-h-[48px] rounded-2xl duo-btn duo-btn-amber font-extrabold text-sm tracking-wide">
+              Autenticar Operador →
+            </button>
+          </form>
+        </div>
+
+        <div class="text-center text-[11px] text-slate-500">
+          Almacenamiento seguro en memoria · Operación offline garantizada
+        </div>
+      </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- ESPACIO PRINCIPAL DE TRABAJO                                        -->
+    <!-- =================================================================== -->
+    <div id="main-workspace" class="hidden h-full w-full flex flex-col overflow-hidden relative">
+
+      <!-- ================================================================= -->
+      <!-- BARRA SUPERIOR CON MENÚ, SELECTOR MULTI-PLACA Y ROL/XP            -->
+      <!-- ================================================================= -->
+      <header class="shrink-0 bg-slate-950 border-b border-slate-800 px-2.5 py-2 flex items-center justify-between gap-1.5 z-20">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <button onclick="toggleDrawerMenu(true)"
+            class="w-10 h-10 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 flex items-center justify-center text-slate-200 shrink-0"
+            aria-label="Abrir menú">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+
+          <div class="min-w-0">
+            <div class="flex items-center gap-1">
+              <h1 id="header-section-title" class="text-xs font-black text-white truncate">Base Central</h1>
+              <span id="header-super-badge" class="hidden px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-500/50 text-amber-300 font-mono text-[9px] font-black">OP</span>
+            </div>
+            <!-- Selector Multi-Placa Real en Vivo -->
+            <select id="global-board-selector" onchange="changeActiveBoard(this.value)"
+              class="mt-0.5 bg-slate-900 border border-cyan-500/40 text-cyan-300 rounded-lg px-1.5 py-0.5 font-mono text-[10px] font-bold max-w-[148px] truncate">
+              <option value="esp32s3">ESP32-S3 (3.3V)</option>
+              <option value="uno_r3">Arduino Uno R3 (5V)</option>
+              <option value="uno_r4">Arduino Uno R4 WiFi</option>
+              <option value="pico">Raspberry Pi Pico</option>
+              <option value="rpi5">Raspberry Pi 4/5</option>
+              <option value="nano">Arduino Nano (5V)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button onclick="navigateToSection('base', 'ranking')"
+            class="h-9 px-2 rounded-xl bg-amber-400/15 border border-amber-400/35 flex items-center gap-1 text-amber-300 font-mono text-[10px] font-extrabold">
+            <span>⚡</span>
+            <span id="header-xp-pill">0</span>
+          </button>
+
+          <button id="header-admin-btn" onclick="navigateToSection('admin')"
+            class="hidden h-9 px-2 rounded-xl bg-rose-500/20 border border-rose-500/45 text-rose-300 font-extrabold text-[11px]"
+            title="Panel Superusuario">
+            🛡️
+          </button>
+
+          <button onclick="openAiCopilotModal()"
+            class="h-9 px-2.5 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white font-extrabold text-xs flex items-center gap-1 shadow">
+            <span>✨</span>
+            <span>IA</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- ================================================================= -->
+      <!-- CONTENEDOR DE VISTAS                                              -->
+      <!-- ================================================================= -->
+      <div class="flex-1 min-h-0 flex flex-col overflow-hidden relative">
+
+        <!-- =============================================================== -->
+        <!-- VISTA 1: HUB DE INICIO (BASE CENTRAL)                           -->
+        <!-- =============================================================== -->
+        <section id="view-inicio" class="stable-scroll px-3.5 pt-3 pb-6 space-y-3">
+          <!-- Directiva / Aviso Global de la Base (Editable por Superusuarios) -->
+          <div class="bg-amber-500/10 border border-amber-500/35 rounded-2xl px-3 py-2 flex items-start gap-2">
+            <span class="text-sm">📡</span>
+            <div class="min-w-0 flex-1">
+              <div class="text-[10px] font-black uppercase text-amber-300">Directiva Operativa del Taller</div>
+              <p id="workshop-announcement-text" class="text-[11px] text-amber-100 leading-snug">
+                Bienvenidos a la Base MecatroBlock. Verifica el voltaje lógico (3.3V vs 5V) de tu placa antes de energizar.
+              </p>
+            </div>
+          </div>
+
+          <!-- Tarjeta de Identidad del Operador / Alumno -->
+          <div class="bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/35 border border-slate-800 rounded-3xl p-3.5 space-y-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <div class="min-w-0">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <h2 id="hub-greeting" class="text-base font-black text-white truncate">¡Hola, Maker!</h2>
+                  <span id="hub-bot-tag" class="hidden px-2 py-0.5 rounded-md bg-cyan-500/20 border border-cyan-500/45 text-cyan-300 font-mono text-[9px] font-black">
+                    [BOT · INSTRUCTOR]
+                  </span>
+                </div>
+                <p id="hub-specialty-line" class="text-[11px] text-slate-300 truncate mt-0.5">Taller de Mecatrónica Embebida</p>
+                <p id="hub-board-spec" class="text-[10px] font-mono text-cyan-300 mt-0.5">Placa: ESP32-S3 · Lógica 3.3V</p>
+              </div>
+              <div class="flex items-center gap-1 shrink-0">
+                <div class="px-2 py-1 rounded-xl bg-rose-500/15 border border-rose-500/35 text-rose-300 text-[11px] font-extrabold">
+                  <span id="hub-integrity">3/3</span> ⚡
+                </div>
+                <div class="px-2 py-1 rounded-xl bg-orange-500/15 border border-orange-500/35 text-orange-300 text-[11px] font-extrabold">
+                  🔥<span id="hub-streak">0</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="space-y-1">
+              <div class="flex justify-between text-[11px] font-bold">
+                <span id="hub-rank-name" class="text-emerald-300">Nv.1 Iniciado</span>
+                <span id="hub-missions-done" class="font-mono text-slate-400">0/6 Retos</span>
+              </div>
+              <div class="h-2.5 bg-slate-950 rounded-full overflow-hidden p-0.5 border border-slate-800">
+                <div id="hub-xp-bar" class="h-full bg-gradient-to-r from-emerald-400 to-cyan-400 rounded-full transition-all duration-500" style="width: 8%;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Acceso Directo a CodeSpaces (VSCodium + PlatformIO) -->
+          <div class="bg-gradient-to-r from-[#0D1117] to-sky-950/40 border border-sky-500/45 rounded-3xl p-3.5 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5">
+                <span class="font-mono text-[10px] font-extrabold uppercase text-sky-400">VSCodium + PlatformIO</span>
+              </div>
+              <h3 id="hub-active-cs-title" class="text-sm font-black text-white truncate mt-0.5">CodeSpace: telemetria-esp32</h3>
+              <p class="text-[11px] text-slate-400 truncate mt-0.5">src/main.cpp · platformio.ini · Build &amp; Sandbox</p>
+            </div>
+            <button onclick="navigateToSection('codespaces')"
+              class="shrink-0 min-h-[42px] px-3.5 rounded-2xl duo-btn duo-btn-sky font-extrabold text-xs">
+              Abrir IDE →
+            </button>
+          </div>
+
+          <!-- Cuadrícula Visual de los 4 Módulos -->
+          <div class="grid grid-cols-2 gap-2.5">
+            <button onclick="navigateToSection('codespaces')"
+              class="rounded-3xl bg-slate-900 hover:bg-slate-800/90 border border-slate-800 hover:border-sky-500/40 p-3.5 text-left transition flex flex-col justify-between min-h-[116px]">
+              <div class="w-9 h-9 rounded-2xl bg-sky-500/15 border border-sky-500/35 flex items-center justify-center text-base">💻</div>
+              <div class="mt-2">
+                <h4 class="text-xs font-black text-white">CodeSpaces IDE</h4>
+                <p class="text-[10px] text-slate-400 mt-0.5">Proyectos VSCodium, PlatformIO y Serial.</p>
+              </div>
+            </button>
+
+            <button onclick="navigateToSection('taller')"
+              class="rounded-3xl bg-slate-900 hover:bg-slate-800/90 border border-slate-800 hover:border-emerald-500/40 p-3.5 text-left transition flex flex-col justify-between min-h-[116px]">
+              <div class="w-9 h-9 rounded-2xl bg-emerald-500/15 border border-emerald-500/35 flex items-center justify-center text-base">🧩</div>
+              <div class="mt-2">
+                <h4 class="text-xs font-black text-white">Taller de Bloques</h4>
+                <p class="text-[10px] text-slate-400 mt-0.5">NEMA 17, OLED, LCD, Servo y retos.</p>
+              </div>
+            </button>
+
+            <button onclick="navigateToSection('protoboard')"
+              class="rounded-3xl bg-slate-900 hover:bg-slate-800/90 border border-slate-800 hover:border-cyan-500/40 p-3.5 text-left transition flex flex-col justify-between min-h-[116px]">
+              <div class="w-9 h-9 rounded-2xl bg-cyan-500/15 border border-cyan-500/35 flex items-center justify-center text-base">🔌</div>
+              <div class="mt-2">
+                <h4 class="text-xs font-black text-white">Protoboard Viva</h4>
+                <p class="text-[10px] text-slate-400 mt-0.5">Cablea componentes y corre tu código.</p>
+              </div>
+            </button>
+
+            <button onclick="navigateToSection('base', 'comunidad')"
+              class="rounded-3xl bg-slate-900 hover:bg-slate-800/90 border border-slate-800 hover:border-amber-500/40 p-3.5 text-left transition flex flex-col justify-between min-h-[116px]">
+              <div class="w-9 h-9 rounded-2xl bg-amber-500/15 border border-amber-500/35 flex items-center justify-center text-base">🎖️</div>
+              <div class="mt-2">
+                <h4 class="text-xs font-black text-white">Base Operativa</h4>
+                <p class="text-[10px] text-slate-400 mt-0.5">6 Bots Instructores, código y Ranking.</p>
+              </div>
+            </button>
+          </div>
+        </section>
+
+        <!-- =============================================================== -->
+        <!-- VISTA 2: CODESPACES POR PROYECTO (ESTILO VSCODIUM + PLATFORMIO) -->
+        <!-- =============================================================== -->
+        <section id="view-codespaces" class="hidden flex-1 min-h-0 flex flex-col overflow-hidden bg-[#0D1117]">
+          <!-- Cabecera de Proyecto CodeSpace + Nuevo CodeSpace -->
+          <div class="shrink-0 bg-[#161B22] border-b border-slate-800 px-2.5 py-2 flex items-center justify-between gap-1.5">
+            <div class="flex items-center gap-1.5 min-w-0 flex-1">
+              <span class="text-sky-400 text-xs font-black shrink-0">📦</span>
+              <select id="cs-project-selector" onchange="selectCodeSpaceProject(this.value)"
+                class="block-select flex-1 min-w-0 truncate bg-[#0D1117] border-slate-700 text-sky-300"></select>
+            </div>
+            <button onclick="toggleNewCodeSpaceModal(true)"
+              class="shrink-0 h-8 px-2.5 rounded-xl bg-sky-500/20 border border-sky-500/45 text-sky-300 font-extrabold text-[11px]">
+              + Nuevo
+            </button>
+            <button onclick="importBlocksIntoActiveCodeSpace()"
+              class="shrink-0 h-8 px-2 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-extrabold text-[10px]"
+              title="Importar bloques del Taller">
+              🧩→C++
+            </button>
+          </div>
+
+          <!-- Explorador de Archivos del Proyecto en Pestañas -->
+          <div id="cs-file-tabs" class="shrink-0 bg-[#090C10] border-b border-slate-800 px-2 py-1.5 flex items-center gap-1 overflow-x-auto"></div>
+
+          <!-- Mini Monitor de Hardware en Vivo dentro de CodeSpaces -->
+          <div class="shrink-0 bg-[#161B22]/90 border-b border-slate-800 px-2.5 py-1.5 flex items-center justify-between gap-1.5 font-mono text-[10px]">
+            <div class="flex items-center gap-2">
+              <span id="cs-hw-led" class="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-400">LED: OFF</span>
+              <span id="cs-hw-servo" class="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-sky-300">SRV: 0°</span>
+              <span id="cs-hw-nema" class="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-purple-300">NEMA: 0st</span>
+            </div>
+            <span id="cs-hw-screen" class="text-cyan-300 truncate max-w-[125px]">OLED: Ready</span>
+          </div>
+
+          <!-- Área Central: Caja de Texto Dedicada a Código con Números de Línea -->
+          <div class="flex-1 min-h-0 flex overflow-hidden vsc-editor-wrap relative">
+            <div id="cs-line-numbers" class="vsc-gutter w-9 py-2.5 pr-2 shrink-0 overflow-hidden select-none">1</div>
+            <textarea id="cs-code-textarea" spellcheck="false" autocapitalize="off" autocomplete="off"
+              oninput="handleCodeEditorInput()" onscroll="syncCodeEditorScroll()"
+              class="vsc-textarea flex-1 h-full py-2.5 px-2.5"></textarea>
+          </div>
+
+          <!-- Barra Táctil de Símbolos Rápidos para Celular -->
+          <div class="shrink-0 bg-[#161B22] border-t border-slate-800 px-2 py-1 flex items-center gap-1 overflow-x-auto">
+            <button type="button" onclick="insertCodeSnippet('  ')" class="px-2.5 py-1 rounded bg-slate-800 text-slate-200 font-mono text-xs font-bold shrink-0">TAB</button>
+            <button type="button" onclick="insertCodeSnippet(';')" class="px-2.5 py-1 rounded bg-slate-800 text-amber-300 font-mono text-xs font-bold shrink-0">;</button>
+            <button type="button" onclick="insertCodeSnippet('{')" class="px-2.5 py-1 rounded bg-slate-800 text-sky-300 font-mono text-xs font-bold shrink-0">{</button>
+            <button type="button" onclick="insertCodeSnippet('}')" class="px-2.5 py-1 rounded bg-slate-800 text-sky-300 font-mono text-xs font-bold shrink-0">}</button>
+            <button type="button" onclick="insertCodeSnippet('(')" class="px-2.5 py-1 rounded bg-slate-800 text-emerald-300 font-mono text-xs font-bold shrink-0">(</button>
+            <button type="button" onclick="insertCodeSnippet(')')" class="px-2.5 py-1 rounded bg-slate-800 text-emerald-300 font-mono text-xs font-bold shrink-0">)</button>
+            <button type="button" onclick="insertCodeSnippet('#')" class="px-2.5 py-1 rounded bg-slate-800 text-purple-300 font-mono text-xs font-bold shrink-0">#</button>
+            <button type="button" onclick="insertCodeSnippet('->')" class="px-2.5 py-1 rounded bg-slate-800 text-cyan-300 font-mono text-xs font-bold shrink-0">-&gt;</button>
+            <button type="button" onclick="insertCodeSnippet('// ')" class="px-2.5 py-1 rounded bg-slate-800 text-slate-400 font-mono text-xs font-bold shrink-0">//</button>
+          </div>
+
+          <!-- Drawer Colapsable: Terminal Build / Monitor Serial 115200 / Copilot -->
+          <div id="cs-terminal-drawer" class="hidden shrink-0 h-[175px] bg-[#090C10] border-t-2 border-sky-500/50 flex flex-col overflow-hidden">
+            <div class="shrink-0 px-3 py-1 bg-[#161B22] border-b border-slate-800 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <button onclick="switchCsDrawerTab('build')" id="cs-dtab-build" class="text-[10px] font-mono font-extrabold text-sky-300 uppercase">Terminal Build</button>
+                <span class="text-slate-600">|</span>
+                <button onclick="switchCsDrawerTab('serial')" id="cs-dtab-serial" class="text-[10px] font-mono font-bold text-slate-400 uppercase">Serial 115200</button>
+                <span class="text-slate-600">|</span>
+                <button onclick="switchCsDrawerTab('copilot')" id="cs-dtab-copilot" class="text-[10px] font-mono font-bold text-violet-300 uppercase">✨ IA Patch</button>
+              </div>
+              <button onclick="closeCsDrawer()" class="text-slate-400 hover:text-white text-xs font-bold px-1.5">✕</button>
+            </div>
+
+            <!-- Panel Build Log -->
+            <div id="cs-drawer-build" class="stable-scroll p-2.5 font-mono text-[11px] leading-relaxed text-slate-300 whitespace-pre-wrap"></div>
+
+            <!-- Panel Monitor Serial 115200 -->
+            <div id="cs-drawer-serial" class="hidden flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div id="cs-serial-log" class="stable-scroll p-2 font-mono text-[11px] text-emerald-300 space-y-0.5"></div>
+              <form onsubmit="sendSerialCommand(event)" class="shrink-0 p-1.5 bg-[#161B22] border-t border-slate-800 flex gap-1.5">
+                <input id="cs-serial-input" type="text" placeholder="Enviar comando serial (ej. STATUS, LED_ON)..."
+                  class="flex-1 h-8 rounded-lg bg-[#0D1117] border border-slate-700 px-2.5 font-mono text-[11px] text-white focus:outline-none focus:border-emerald-400" />
+                <button type="submit" class="h-8 px-3 rounded-lg bg-emerald-500 text-slate-950 font-mono text-[11px] font-extrabold">TX</button>
+              </form>
+            </div>
+
+            <!-- Panel Copilot Diff / Patch -->
+            <div id="cs-drawer-copilot" class="hidden flex-1 min-h-0 flex flex-col justify-between p-2.5 overflow-hidden">
+              <div id="cs-copilot-output" class="stable-scroll text-xs text-slate-200 leading-relaxed"></div>
+              <div class="shrink-0 pt-1.5 flex justify-end gap-2">
+                <button onclick="applyCopilotPatchToEditor()" id="cs-apply-patch-btn"
+                  class="hidden h-8 px-3 rounded-xl bg-violet-500 text-white font-extrabold text-[11px]">
+                  ⚡ Aplicar al Editor
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Barra Inferior PlatformIO IDE (4 Acciones Principales) -->
+          <div class="shrink-0 bg-[#161B22] border-t border-slate-800 px-2 py-2 grid grid-cols-4 gap-1.5">
+            <button onclick="runPlatformIOBuild()"
+              class="min-h-[40px] rounded-xl bg-sky-500/20 border border-sky-500/45 text-sky-300 font-extrabold text-[11px] flex items-center justify-center gap-1">
+              <span>🔨</span><span>Build</span>
+            </button>
+            <button onclick="runCodeSpaceSandbox()"
+              class="min-h-[40px] rounded-xl bg-emerald-500/20 border border-emerald-500/45 text-emerald-300 font-extrabold text-[11px] flex items-center justify-center gap-1">
+              <span>▶</span><span>Sandbox</span>
+            </button>
+            <button onclick="openSerialMonitor()"
+              class="min-h-[40px] rounded-xl bg-amber-500/20 border border-amber-500/45 text-amber-300 font-extrabold text-[11px] flex items-center justify-center gap-1">
+              <span>📟</span><span>Serial</span>
+            </button>
+            <button onclick="askCodeSpaceCopilot()"
+              class="min-h-[40px] rounded-xl bg-violet-500/25 border border-violet-500/50 text-violet-200 font-extrabold text-[11px] flex items-center justify-center gap-1">
+              <span>✨</span><span>IA</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- =============================================================== -->
+        <!-- VISTA 3: TALLER DE BLOQUES + SIMULADOR DE HARDWARE              -->
+        <!-- =============================================================== -->
+        <section id="view-taller" class="hidden flex-1 min-h-0 flex flex-col overflow-hidden">
+          <!-- Banco de Hardware Virtual -->
+          <div class="shrink-0 bg-slate-900 border-b border-slate-800 px-3 py-2 space-y-1.5 z-10">
+            <div class="grid grid-cols-12 gap-1.5">
+              <!-- LED -->
+              <div class="col-span-3 bg-slate-950 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center justify-center">
+                <div class="flex items-center gap-1">
+                  <div class="relative w-4 h-4 flex items-center justify-center">
+                    <div id="hw-led-halo" class="absolute inset-0 rounded-full bg-rose-500 blur-sm opacity-0 transition-opacity"></div>
+                    <div id="hw-led-bulb" class="w-3 h-3 rounded-full bg-rose-950 border border-rose-500/50 relative z-10"></div>
+                  </div>
+                  <span id="hw-led-pin-tag" class="font-mono text-[9px] font-bold text-slate-300">LED 2</span>
+                </div>
+                <span id="hw-led-label" class="font-mono text-[9px] text-slate-500 mt-0.5">0V OFF</span>
+              </div>
+
+              <!-- Servo SG90 -->
+              <div class="col-span-3 bg-slate-950 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center justify-center">
+                <div class="flex items-center gap-1">
+                  <svg viewBox="0 0 32 20" class="w-6 h-3.5 overflow-visible">
+                    <path d="M 3 17 A 13 13 0 0 1 29 17" fill="none" stroke="#334155" stroke-width="2" />
+                    <g id="hw-servo-arm" style="transform-origin: 16px 17px; transition: transform 0.25s ease; transform: rotate(-90deg);">
+                      <line x1="16" y1="17" x2="16" y2="4" stroke="#38BDF8" stroke-width="2.8" stroke-linecap="round" />
+                      <circle cx="16" cy="17" r="2.5" fill="#F8FAFC" />
+                    </g>
+                  </svg>
+                  <span id="hw-servo-deg" class="font-mono text-[9px] font-bold text-sky-400">0°</span>
+                </div>
+                <span id="hw-servo-pin-tag" class="font-mono text-[9px] text-slate-500 mt-0.5">SRV 13</span>
+              </div>
+
+              <!-- NEMA 17 -->
+              <div class="col-span-3 bg-slate-950 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center justify-center">
+                <div class="flex items-center gap-1">
+                  <svg viewBox="0 0 24 24" class="w-4 h-4">
+                    <rect x="2" y="2" width="20" height="20" rx="4" fill="#1E293B" stroke="#A855F7" stroke-width="1.6"/>
+                    <g id="hw-nema-rotor" style="transform-origin: 12px 12px; transition: transform 0.25s ease;">
+                      <circle cx="12" cy="12" r="5" fill="#0F172A" stroke="#E9D5FF" stroke-width="1.4"/>
+                      <line x1="12" y1="7" x2="12" y2="17" stroke="#C084FC" stroke-width="1.8"/>
+                    </g>
+                  </svg>
+                  <span id="hw-nema-steps" class="font-mono text-[9px] font-bold text-purple-300">0st</span>
+                </div>
+                <span class="font-mono text-[8px] text-slate-500 mt-0.5">NEMA17</span>
+              </div>
+
+              <!-- Botón / Final de carrera -->
+              <button onclick="toggleSimButton()"
+                class="col-span-3 bg-slate-950 hover:bg-slate-900 border border-slate-700 rounded-xl p-1.5 flex flex-col items-center justify-center transition">
+                <span id="hw-btn-icon" class="font-mono text-[10px] font-extrabold text-amber-300">BTN: 1</span>
+                <span id="hw-btn-pin-tag" class="font-mono text-[8px] text-slate-400 mt-0.5">PIN 4</span>
+              </button>
+            </div>
+
+            <!-- Pantallas Virtuales OLED 128x64 y LCD 16x2 -->
+            <div class="grid grid-cols-2 gap-1.5">
+              <div class="bg-[#050B14] border border-cyan-500/40 rounded-xl px-2 py-1 font-mono">
+                <div class="flex items-center justify-between text-[8px] text-cyan-500/80">
+                  <span>OLED 128x64</span>
+                  <span>0x3C</span>
+                </div>
+                <div id="hw-oled-line1" class="text-[10px] font-bold text-cyan-300 truncate leading-tight mt-0.5">MecatroBlock</div>
+                <div id="hw-oled-line2" class="text-[9px] text-cyan-200/90 truncate leading-tight">Bus I2C Listo</div>
+              </div>
+
+              <div class="bg-[#123524] border border-emerald-500/50 rounded-xl px-2 py-1 font-mono">
+                <div class="flex items-center justify-between text-[8px] text-emerald-300/80">
+                  <span>LCD 16x2</span>
+                  <span>0x27</span>
+                </div>
+                <div id="hw-lcd-row0" class="text-[10px] font-bold text-emerald-100 truncate leading-tight mt-0.5">Placa Lista</div>
+                <div id="hw-lcd-row1" class="text-[9px] text-emerald-200/90 truncate leading-tight"> </div>
+              </div>
+            </div>
+
+            <!-- Slider Ultrasónico + Probar + Reset -->
+            <div class="flex items-center gap-2 bg-slate-950/90 border border-slate-800 rounded-xl px-2.5 py-1">
+              <span class="font-mono text-[9px] font-bold text-emerald-400 shrink-0">HC-SR04</span>
+              <input id="ultrasonic-slider" type="range" min="2" max="100" value="25"
+                oninput="handleSensorSlide(this.value)"
+                class="sonic-range flex-1 min-w-0" />
+              <span id="hw-sonic-val" class="font-mono text-[10px] font-bold text-amber-300 w-[40px] text-center shrink-0">25cm</span>
+
+              <button onclick="toggleRunSimulation()"
+                class="h-8 px-2.5 rounded-lg bg-sky-500/20 border border-sky-500/40 text-sky-300 text-[11px] font-extrabold shrink-0">
+                <span id="sim-play-text">▶ Probar</span>
+              </button>
+
+              <button onclick="resetCurrentWorkspace()"
+                class="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs flex items-center justify-center shrink-0">
+                ↺
+              </button>
+            </div>
+          </div>
+
+          <!-- Área Desplazable de Reto + Árbol de Bloques -->
+          <div class="stable-scroll px-3 pt-2 pb-6 space-y-2.5">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 space-y-2">
+              <div class="flex items-center justify-between gap-2">
+                <select id="mission-selector-dropdown" onchange="selectMissionByIndex(Number(this.value))"
+                  class="block-select max-w-[235px] truncate"></select>
+                <div class="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 shrink-0">
+                  <button id="mode-btn-ruta" onclick="setAppMode('ruta')"
+                    class="px-2 py-1 rounded-md text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    Reto
+                  </button>
+                  <button id="mode-btn-libre" onclick="setAppMode('libre')"
+                    class="px-2 py-1 rounded-md text-[10px] font-bold text-slate-400">
+                    Libre
+                  </button>
+                </div>
+              </div>
+
+              <div id="mission-briefing-box" class="space-y-1.5">
+                <p id="mission-goal-text" class="text-xs text-slate-200 leading-relaxed"></p>
+                <div class="bg-sky-950/50 border border-sky-500/25 rounded-xl px-2.5 py-1.5 text-[11px] text-sky-200 leading-snug">
+                  <strong class="text-sky-300">Fundamento:</strong> <span id="mission-rational-text"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between bg-sky-500/10 border border-sky-500/30 rounded-xl px-3 py-1.5">
+              <span class="text-[11px] text-sky-200 truncate">
+                Destino: <strong id="active-target-label" class="text-white font-mono">SETUP</strong>
+              </span>
+              <button onclick="importBlocksIntoActiveCodeSpace()" class="text-[10px] font-extrabold text-emerald-300 underline shrink-0">
+                Exportar a CodeSpace →
+              </button>
+            </div>
+
+            <div id="blocks-tree-root" class="space-y-2.5"></div>
+          </div>
+
+          <!-- Paleta Inferior de Bloques -->
+          <div class="shrink-0 bg-slate-950 border-t border-slate-800 px-3 pt-2 pb-2 space-y-1.5">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] font-bold text-slate-400 uppercase">Agregar bloque:</span>
+              <button onclick="togglePaletteCategory()"
+                class="text-[11px] font-bold text-sky-300 px-2.5 py-0.5 rounded-lg bg-slate-900 border border-slate-800">
+                <span id="palette-cat-label">Pantallas y Lógica ⇄</span>
+              </button>
+            </div>
+
+            <div id="palette-group-1" class="grid grid-cols-4 gap-1.5">
+              <button onclick="insertBlockByTap('led_write')" class="min-h-[40px] rounded-xl bg-sky-500/15 border border-sky-500/40 px-1 flex flex-col items-center justify-center">
+                <span class="text-[10px] font-extrabold text-sky-300">💡 LED</span>
+                <span class="text-[8px] text-slate-400">Digital</span>
+              </button>
+              <button onclick="insertBlockByTap('servo_write')" class="min-h-[40px] rounded-xl bg-sky-500/15 border border-sky-500/40 px-1 flex flex-col items-center justify-center">
+                <span class="text-[10px] font-extrabold text-sky-300">🦾 Servo</span>
+                <span class="text-[8px] text-slate-400">0°-180°</span>
+              </button>
+              <button onclick="insertBlockByTap('stepper_move')" class="min-h-[40px] rounded-xl bg-purple-500/15 border border-purple-500/40 px-1 flex flex-col items-center justify-center">
+                <span class="text-[10px] font-extrabold text-purple-300">⚙️ NEMA 17</span>
+                <span class="text-[8px] text-slate-400">STEP/DIR</span>
+              </button>
+              <button onclick="insertBlockByTap('wait')" class="min-h-[40px] rounded-xl bg-amber-500/15 border border-amber-500/40 px-1 flex flex-col items-center justify-center">
+                <span class="text-[10px] font-extrabold text-amber-300">⏱️ Esperar</span>
+                <span class="text-[8px] text-slate-400">ms</span>
+              </button>
+            </div>
+
+            <div id="palette-group-2" class="hidden grid grid-cols-5 gap-1">
+              <button onclick="insertBlockByTap('oled_print')" class="min-h-[40px] rounded-xl bg-cyan-500/15 border border-cyan-500/40 px-1 flex flex-col items-center justify-center">
+                <span class="text-[10px] font-extrabold text-cyan-300">🖥️ OLED</span>
+                <span class="text-[8px] text-slate-400">0x3C</span>
+              </button>
+              <button onclick="insertBlockByTap('lcd_print')" class="min-h-[40px] rounded-xl bg-emerald-500/15 border border-emerald-500/40 px-1 flex flex-col items-center justify-center">
+                <span class="text-[10px] font-extrabold text-emerald-300">📟 LCD</span>
+                <span class="text-[8px] text-slate-400">0x27</span>
+              </button>
+              <button onclick="insertBlockByTap('ultrasonic_read')" class="min-h-[40px] rounded-xl bg-emerald-500/15 border border-emerald-500/40 px-1 flex flex-col items-center justify-center">
+                <span class="text-[10px] font-extrabold text-emerald-300">📡 Sensor</span>
+                <span class="text-[8px] text-slate-400">HC-SR04</span>
+              </button>
+              <button onclick="insertBlockByTap('repeat_n')" class="min-h-[40px] rounded-xl bg-purple-500/15 border border-purple-500/40 px-1 flex flex-col items-center justify-center">
+                <span class="text-[10px] font-extrabold text-purple-300">🔁 Repetir</span>
+                <span class="text-[8px] text-slate-400">FOR</span>
+              </button>
+              <button onclick="insertBlockByTap('if_else_block')" class="min-h-[40px] rounded-xl bg-amber-500/15 border border-amber-500/40 px-1 flex flex-col items-center justify-center">
+                <span class="text-[10px] font-extrabold text-amber-300">🔀 Si/Sino</span>
+                <span class="text-[8px] text-slate-400">IF/ELSE</span>
+              </button>
+            </div>
+
+            <button onclick="handlePrimaryBottomAction()"
+              class="w-full min-h-[44px] rounded-2xl duo-btn duo-btn-emerald font-extrabold text-xs uppercase tracking-wide flex items-center justify-center gap-2">
+              <span>✓</span>
+              <span id="primary-cta-text">Comprobar Lógica</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- =============================================================== -->
+        <!-- VISTA 4: LABORATORIO DE PROTOBOARD INTERACTIVA                  -->
+        <!-- =============================================================== -->
+        <section id="view-protoboard" class="hidden flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div class="shrink-0 bg-slate-900 border-b border-slate-800 px-3 py-2 space-y-1.5">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[11px] font-black text-cyan-300 uppercase">Armado Físico:</span>
+              <div class="flex items-center gap-1">
+                <button onclick="loadSampleProtoCircuit()" class="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[10px] font-bold text-slate-200">
+                  ✨ Circuito Base
+                </button>
+                <button onclick="clearProtoboard()" class="px-2 py-1 rounded-lg bg-rose-500/15 border border-rose-500/35 text-[10px] font-bold text-rose-300">
+                  Limpiar
+                </button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-5 gap-1">
+              <button onclick="setProtoTool('inspect')" id="pb-tool-inspect"
+                class="min-h-[36px] rounded-xl text-[10px] font-extrabold border bg-cyan-500/20 border-cyan-500/50 text-cyan-200">
+                🔍 Probar
+              </button>
+              <button onclick="setProtoTool('wire')" id="pb-tool-wire"
+                class="min-h-[36px] rounded-xl text-[10px] font-extrabold border bg-slate-950 border-slate-800 text-slate-300">
+                〰️ Cable
+              </button>
+              <button onclick="setProtoTool('led')" id="pb-tool-led"
+                class="min-h-[36px] rounded-xl text-[10px] font-extrabold border bg-slate-950 border-slate-800 text-slate-300">
+                💡 LED
+              </button>
+              <button onclick="setProtoTool('resistor')" id="pb-tool-resistor"
+                class="min-h-[36px] rounded-xl text-[10px] font-extrabold border bg-slate-950 border-slate-800 text-slate-300">
+                ⚡ 220Ω
+              </button>
+              <button onclick="setProtoTool('module')" id="pb-tool-module"
+                class="min-h-[36px] rounded-xl text-[10px] font-extrabold border bg-slate-950 border-slate-800 text-slate-300">
+                📟 Módulo
+              </button>
+            </div>
+
+            <div id="pb-wire-options" class="hidden flex items-center justify-between bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
+              <span class="text-[10px] text-slate-400">Cable puente (toca 2 puntos):</span>
+              <select id="pb-wire-color" class="block-select">
+                <option value="#EF4444">VCC (+ Rojo)</option>
+                <option value="#3B82F6">GND (− Azul)</option>
+                <option value="#10B981">Señal GPIO (Verde)</option>
+                <option value="#FBBF24">Bus I2C (Amarillo)</option>
+              </select>
+            </div>
+
+            <div id="pb-module-options" class="hidden flex items-center justify-between bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
+              <span class="text-[10px] text-slate-400">Componente a insertar:</span>
+              <select id="pb-module-type" class="block-select">
+                <option value="button">Botón Pulsador</option>
+                <option value="servo">Servo SG90</option>
+                <option value="oled">OLED SSD1306 I2C</option>
+                <option value="a4988">Driver A4988 (NEMA17)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="stable-scroll px-3 pt-2.5 pb-6 space-y-2.5">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2 space-y-1">
+              <div class="flex items-center justify-between">
+                <span id="pb-board-header-label" class="font-mono text-[10px] font-black text-cyan-300">HEADER: ESP32-S3 (3.3V)</span>
+                <span class="text-[9px] text-slate-400">Toca un pin para cablear</span>
+              </div>
+              <div id="pb-mcu-pins-bar" class="grid grid-cols-6 gap-1"></div>
+            </div>
+
+            <div class="bg-[#E2E8F0] text-slate-900 rounded-2xl p-2 border-2 border-slate-600 relative select-none overflow-hidden">
+              <div class="flex items-center gap-1 mb-0.5">
+                <span class="w-3 text-[9px] font-black text-red-600 text-center">+</span>
+                <div id="pb-rail-plus" class="flex-1 grid gap-[2px]" style="grid-template-columns: repeat(16, minmax(0, 1fr));"></div>
+              </div>
+              <div class="h-[2px] bg-red-500/80 mb-1 ml-4"></div>
+              <div class="flex items-center gap-1 mb-1">
+                <span class="w-3 text-[9px] font-black text-blue-600 text-center">−</span>
+                <div id="pb-rail-minus" class="flex-1 grid gap-[2px]" style="grid-template-columns: repeat(16, minmax(0, 1fr));"></div>
+              </div>
+
+              <div class="relative">
+                <div id="pb-matrix-top" class="space-y-[2px]"></div>
+                <div class="my-1.5 ml-4 h-2.5 bg-slate-300 border-y border-slate-400 flex items-center justify-center">
+                  <span class="font-mono text-[7px] font-bold text-slate-500">CANAL CENTRAL AISLANTE</span>
+                </div>
+                <div id="pb-matrix-bot" class="space-y-[2px]"></div>
+
+                <svg id="pb-user-svg-layer" viewBox="0 0 320 170" preserveAspectRatio="none"
+                  class="pointer-events-none absolute inset-0 w-full h-full z-20"></svg>
+              </div>
+            </div>
+
+            <div id="pb-audit-card" class="bg-slate-900 border border-emerald-500/40 rounded-2xl p-3 space-y-1">
+              <div class="flex items-center justify-between">
+                <span id="pb-audit-title" class="text-xs font-black text-emerald-300">Estado Eléctrico: Listo</span>
+                <span id="pb-components-count" class="font-mono text-[10px] text-slate-400">0 componentes · 0 cables</span>
+              </div>
+              <p id="pb-audit-desc" class="text-xs text-slate-300 leading-relaxed">
+                Selecciona una herramienta arriba y toca los nodos de la protoboard o pines de tu placa para cablear.
+              </p>
+            </div>
+          </div>
+
+          <div class="shrink-0 bg-slate-950 border-t border-slate-800 px-3 py-2 grid grid-cols-2 gap-2">
+            <button onclick="auditProtoCircuit(true)"
+              class="min-h-[44px] rounded-2xl duo-btn duo-btn-sky font-extrabold text-xs">
+              ⚡ Auditar Circuito
+            </button>
+            <button onclick="runProgramOnProtoboard()"
+              class="min-h-[44px] rounded-2xl duo-btn duo-btn-emerald font-extrabold text-xs">
+              ▶ Ejecutar en Circuito
+            </button>
+          </div>
+        </section>
+
+        <!-- =============================================================== -->
+        <!-- VISTA 5: BASE OPERATIVA (COMUNIDAD, 6 BOTS INSTRUCTORES, PODIO)  -->
+        <!-- =============================================================== -->
+        <section id="view-base" class="hidden flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div class="shrink-0 bg-slate-950 border-b border-slate-800 px-3 py-2">
+            <div class="grid grid-cols-3 gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
+              <button id="base-tab-comunidad" onclick="switchBaseSubtab('comunidad')"
+                class="min-h-[36px] rounded-lg text-[11px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                💬 Muro &amp; Código
+              </button>
+              <button id="base-tab-instructores" onclick="switchBaseSubtab('instructores')"
+                class="min-h-[36px] rounded-lg text-[11px] font-extrabold text-slate-400">
+                🤖 6 Bots Op.
+              </button>
+              <button id="base-tab-ranking" onclick="switchBaseSubtab('ranking')"
+                class="min-h-[36px] rounded-lg text-[11px] font-extrabold text-slate-400">
+                🏆 Ranking
+              </button>
+            </div>
+          </div>
+
+          <!-- SUBTAB 1: TABLÓN DE COMUNICACIONES CON CAJA DEDICADA DE CÓDIGO -->
+          <div id="base-panel-comunidad" class="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div id="base-feed-list" class="stable-scroll px-3 py-2.5 space-y-2.5"></div>
+
+            <!-- Compositor con Caja Dedicada a Código -->
+            <form onsubmit="publishBasePost(event)" class="shrink-0 bg-slate-950 border-t border-slate-800 p-2.5 space-y-1.5">
+              <div class="flex items-center justify-between px-1">
+                <button type="button" onclick="toggleFeedCodeBox()"
+                  class="text-[11px] font-mono font-extrabold text-sky-300 bg-sky-500/15 border border-sky-500/35 px-2.5 py-1 rounded-lg">
+                  <span id="feed-code-toggle-label">+ Caja de Código</span>
+                </button>
+                <button type="button" onclick="fillFeedCodeFromActiveSpace()"
+                  class="text-[10px] font-mono text-emerald-300 underline">
+                  Pegar de CodeSpace
+                </button>
+              </div>
+
+              <div id="feed-code-box-wrap" class="hidden space-y-1">
+                <div class="flex items-center justify-between">
+                  <span class="font-mono text-[10px] text-slate-400">Snippet de código formateado:</span>
+                  <select id="feed-code-lang" class="block-select py-0.5 text-[10px]">
+                    <option value="C++">C++ / Arduino</option>
+                    <option value="Python">Python / uPy</option>
+                    <option value="INI">platformio.ini</option>
+                  </select>
+                </div>
+                <textarea id="feed-code-textarea" rows="3" spellcheck="false" placeholder="// Escribe o pega aquí tu código..."
+                  class="w-full rounded-xl bg-[#0D1117] border border-slate-700 p-2 font-mono text-[11px] text-sky-200 placeholder-slate-600 focus:outline-none focus:border-sky-400 resize-none"></textarea>
+              </div>
+
+              <div class="flex gap-1.5">
+                <input id="base-post-input" type="text" placeholder="Comparte avances o consulta a los instructores..."
+                  class="flex-1 min-h-[42px] rounded-xl bg-slate-900 border border-slate-700 px-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400" />
+                <button type="submit" class="min-h-[42px] px-4 rounded-xl duo-btn duo-btn-emerald font-extrabold text-xs">
+                  Enviar
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- SUBTAB 2: ESCUADRÓN DE 6 BOTS INSTRUCTORES (DECLARADOS COMO BOTS DEMO) -->
+          <div id="base-panel-instructores" class="hidden stable-scroll px-3 pt-3 pb-6 space-y-2.5">
+            <div class="bg-cyan-500/10 border border-cyan-500/35 rounded-2xl p-3 text-xs text-cyan-100 leading-relaxed">
+              <strong>Nota de Transparencia:</strong> Los siguientes 6 operadores son <strong>bots instructores de demostración ([BOT · INSTRUCTOR])</strong> diseñados para asistirte en cada especialidad técnica del taller.
+            </div>
+            <div id="instructors-roster-list" class="space-y-2"></div>
+          </div>
+
+          <!-- SUBTAB 3: RANKING DEL TALLER -->
+          <div id="base-panel-ranking" class="hidden stable-scroll px-3 pt-3 pb-6 space-y-3">
+            <div id="ranking-podium" class="grid grid-cols-3 gap-2 items-end pt-1"></div>
+            <div id="ranking-list" class="space-y-1.5"></div>
+          </div>
+        </section>
+
+        <!-- =============================================================== -->
+        <!-- VISTA 6: PANEL SUPERUSUARIO (7 SUPERUSUARIOS)                   -->
+        <!-- =============================================================== -->
+        <section id="view-admin" class="hidden flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div class="stable-scroll px-3 pt-3 pb-6 space-y-3">
+            <div class="bg-gradient-to-r from-amber-950/70 to-slate-900 border border-amber-500/45 rounded-3xl p-3.5">
+              <div class="flex items-center justify-between">
+                <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-black">COMANDO SUPERUSUARIO</span>
+                <span id="admin-active-callsign" class="font-mono text-[10px] text-cyan-300">Portal</span>
+              </div>
+              <h2 class="text-base font-black text-white mt-1">Panel de Control de Base</h2>
+              <p class="text-[11px] text-slate-300">Edita directivas globales, agrega retos al plan, gestiona XP y modera publicaciones.</p>
+            </div>
+
+            <!-- 1. Directiva Global -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
+              <div class="text-xs font-extrabold text-amber-300">📡 Directiva Operativa Global</div>
+              <textarea id="admin-announcement-input" rows="2"
+                class="w-full rounded-xl bg-slate-950 border border-slate-700 p-2 text-xs text-white resize-none"></textarea>
+              <button onclick="adminUpdateAnnouncement()"
+                class="w-full min-h-[40px] rounded-xl duo-btn duo-btn-sky font-extrabold text-xs">
+                Actualizar Directiva
+              </button>
+            </div>
+
+            <!-- 2. Crear Reto en el Taller -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
+              <div class="text-xs font-extrabold text-emerald-300">🎯 Crear Nuevo Reto de Taller</div>
+              <input id="admin-mission-title" type="text" placeholder="Título (ej. 7. Telemetría NEMA 17 + OLED)"
+                class="w-full min-h-[38px] rounded-xl bg-slate-950 border border-slate-700 px-3 text-xs text-white" />
+              <input id="admin-mission-goal" type="text" placeholder="Objetivo práctico para el alumno..."
+                class="w-full min-h-[38px] rounded-xl bg-slate-950 border border-slate-700 px-3 text-xs text-white" />
+              <input id="admin-mission-rational" type="text" placeholder="Fundamento técnico / hardware..."
+                class="w-full min-h-[38px] rounded-xl bg-slate-950 border border-slate-700 px-3 text-xs text-white" />
+              <button onclick="adminAddCustomMission()"
+                class="w-full min-h-[40px] rounded-xl duo-btn duo-btn-emerald font-extrabold text-xs">
+                + Añadir Reto al Taller
+              </button>
+            </div>
+
+            <!-- 3. Gestión de Ranking XP -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-extrabold text-cyan-300">🏆 Gestión de Puntajes XP</span>
+                <button onclick="adminResetAllXp()"
+                  class="px-2.5 py-1 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px] font-extrabold">
+                  Reiniciar XP
+                </button>
+              </div>
+              <div id="admin-users-list" class="space-y-1.5"></div>
+            </div>
+
+            <!-- 4. Moderación del Muro -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-extrabold text-rose-300">🛡️ Moderación Base Operativa</span>
+                <button onclick="adminClearFeed()"
+                  class="px-2.5 py-1 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px] font-extrabold">
+                  Limpiar Muro
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- MODAL: CREAR NUEVO CODESPACE (VSCODIUM + PLATFORMIO)               -->
+      <!-- ================================================================= -->
+      <div id="new-cs-modal" class="hidden absolute inset-0 z-50 bg-slate-950/85 flex items-center justify-center p-4">
+        <form onsubmit="createNewCodeSpace(event)" class="w-full max-w-[380px] bg-slate-900 border border-sky-500/45 rounded-3xl p-4 space-y-3 shadow-2xl">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-black text-white">📦 Nuevo CodeSpace PlatformIO</h3>
+            <button type="button" onclick="toggleNewCodeSpaceModal(false)" class="w-8 h-8 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold">✕</button>
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-300 mb-1">Nombre del Proyecto</label>
+            <input id="new-cs-name" type="text" required maxlength="28" placeholder="ej. brazo-robot-nema17"
+              class="w-full min-h-[42px] rounded-xl bg-slate-950 border border-slate-700 px-3 font-mono text-xs text-white focus:outline-none focus:border-sky-400" />
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-300 mb-1">Placa Target</label>
+              <select id="new-cs-board" class="w-full block-select">
+                <option value="esp32s3">ESP32-S3</option>
+                <option value="uno_r3">Arduino Uno R3</option>
+                <option value="uno_r4">Arduino Uno R4</option>
+                <option value="pico">Raspberry Pi Pico</option>
+                <option value="rpi5">Raspberry Pi 4/5</option>
+                <option value="nano">Arduino Nano</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-300 mb-1">Framework</label>
+              <select id="new-cs-framework" class="w-full block-select">
+                <option value="arduino">Arduino C++</option>
+                <option value="micropython">MicroPython</option>
+                <option value="gpiozero">Python gpiozero</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-300 mb-1">Librerías (lib_deps)</label>
+            <input id="new-cs-libs" type="text" value="waspinator/AccelStepper, adafruit/Adafruit SSD1306"
+              class="w-full min-h-[40px] rounded-xl bg-slate-950 border border-slate-700 px-3 font-mono text-[11px] text-cyan-200 focus:outline-none focus:border-sky-400" />
+          </div>
+
+          <button type="submit" class="w-full min-h-[44px] rounded-2xl duo-btn duo-btn-sky font-extrabold text-xs uppercase">
+            Inicializar Entorno →
+          </button>
+        </form>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- MENÚ LATERAL DESPLEGABLE (DRAWER NAVIGATION)                      -->
+      <!-- ================================================================= -->
+      <div id="nav-drawer-overlay" onclick="toggleDrawerMenu(false)" class="hidden absolute inset-0 z-40 bg-slate-950/80 flex">
+        <aside onclick="event.stopPropagation()" class="w-[78%] max-w-[300px] h-full bg-slate-900 border-r border-slate-800 p-4 flex flex-col justify-between shadow-2xl">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <div id="drawer-avatar" class="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 text-slate-950 font-black text-base flex items-center justify-center shrink-0">M</div>
+                <div class="min-w-0">
+                  <div id="drawer-username" class="text-sm font-black text-white truncate">Maker</div>
+                  <div id="drawer-role-badge" class="text-[10px] font-mono text-emerald-400 truncate">Invitado · Nv.1</div>
+                </div>
+              </div>
+              <button onclick="toggleDrawerMenu(false)" class="w-8 h-8 rounded-lg bg-slate-800 text-slate-300 font-bold text-xs">✕</button>
+            </div>
+
+            <nav class="space-y-1">
+              <button onclick="navigateToSection('inicio')" id="drawer-link-inicio" class="w-full min-h-[42px] px-3 rounded-xl flex items-center gap-3 text-xs font-extrabold bg-emerald-500/15 text-emerald-300 border border-emerald-500/35">
+                <span>🏠</span><span>Base Central (Inicio)</span>
+              </button>
+              <button onclick="navigateToSection('codespaces')" id="drawer-link-codespaces" class="w-full min-h-[42px] px-3 rounded-xl flex items-center gap-3 text-xs font-bold text-slate-300 hover:bg-slate-800">
+                <span>💻</span><span>CodeSpaces (VSCodium)</span>
+              </button>
+              <button onclick="navigateToSection('taller')" id="drawer-link-taller" class="w-full min-h-[42px] px-3 rounded-xl flex items-center gap-3 text-xs font-bold text-slate-300 hover:bg-slate-800">
+                <span>🧩</span><span>Taller de Bloques</span>
+              </button>
+              <button onclick="navigateToSection('protoboard')" id="drawer-link-protoboard" class="w-full min-h-[42px] px-3 rounded-xl flex items-center gap-3 text-xs font-bold text-slate-300 hover:bg-slate-800">
+                <span>🔌</span><span>Protoboard Interactiva</span>
+              </button>
+              <button onclick="navigateToSection('base', 'comunidad')" id="drawer-link-base" class="w-full min-h-[42px] px-3 rounded-xl flex items-center gap-3 text-xs font-bold text-slate-300 hover:bg-slate-800">
+                <span>🎖️</span><span>Base Operativa &amp; Bots</span>
+              </button>
+              <button onclick="navigateToSection('admin')" id="drawer-link-admin" class="hidden w-full min-h-[42px] px-3 rounded-xl flex items-center gap-3 text-xs font-extrabold text-amber-300 bg-amber-500/15 border border-amber-500/35">
+                <span>🛡️</span><span>Panel Superusuario</span>
+              </button>
+            </nav>
+          </div>
+
+          <div class="pt-3 border-t border-slate-800">
+            <button onclick="logoutToAuthScreen()"
+              class="w-full min-h-[42px] rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 text-rose-300 font-bold text-xs">
+              🚪 Cambiar Operador / Salir
+            </button>
+          </div>
+        </aside>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- MODAL COPILOTO CONTEXTUAL MECATRO-IA                              -->
+      <!-- ================================================================= -->
+      <div id="ai-copilot-modal" class="hidden absolute inset-0 z-50 bg-slate-950/85 flex flex-col justify-end">
+        <div class="w-full h-[82%] bg-slate-900 border-t-2 border-violet-500 rounded-t-3xl flex flex-col overflow-hidden shadow-2xl">
+          <div class="shrink-0 px-4 py-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-8 h-8 rounded-xl bg-violet-500/20 border border-violet-500/40 flex items-center justify-center text-base">✨</span>
+              <div>
+                <h3 class="text-xs font-black text-white">Mecatro-IA · Asistente Técnico</h3>
+                <p id="ai-context-badge" class="text-[10px] font-mono text-violet-300">Placa: ESP32-S3</p>
+              </div>
+            </div>
+            <button onclick="closeAiCopilotModal()" class="w-9 h-9 rounded-xl bg-slate-800 text-slate-200 font-bold text-xs">✕</button>
+          </div>
+
+          <div id="ai-quick-chips" class="shrink-0 px-3 py-2 bg-slate-900 border-b border-slate-800 flex gap-1.5 overflow-x-auto"></div>
+          <div id="ai-copilot-messages" class="stable-scroll px-3 py-3 space-y-2.5 bg-slate-950"></div>
+
+          <form onsubmit="handleGlobalAiSubmit(event)" class="shrink-0 p-3 bg-slate-900 border-t border-slate-800 flex gap-2">
+            <input id="ai-copilot-input" type="text" placeholder="Consulta sobre tu CodeSpace, placa o circuito..."
+              class="flex-1 min-h-[44px] rounded-xl bg-slate-950 border border-slate-700 px-3 text-xs text-white focus:outline-none focus:border-violet-400" />
+            <button type="submit" class="min-h-[44px] px-4 rounded-xl bg-violet-500 text-white font-extrabold text-xs">Enviar</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- BANNER DE RETROALIMENTACIÓN TIPO DUOLINGO -->
+      <div id="duo-feedback-sheet" class="hidden absolute inset-x-0 bottom-0 z-50 rounded-t-3xl p-4 shadow-2xl border-t-2">
+        <div class="flex items-start gap-3">
+          <div id="fb-icon-box" class="w-10 h-10 rounded-2xl flex items-center justify-center text-lg shrink-0 font-black">✓</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-2">
+              <h3 id="fb-title" class="text-sm font-black">¡Excelente!</h3>
+              <span id="fb-xp-pill" class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold">+25 XP</span>
+            </div>
+            <p id="fb-message" class="text-xs leading-relaxed mt-1"></p>
+          </div>
+        </div>
+        <button id="fb-action-btn" onclick="handleFeedbackButton()"
+          class="mt-3 w-full min-h-[46px] rounded-2xl duo-btn duo-btn-emerald font-extrabold text-xs uppercase tracking-wide">
+          Continuar
+        </button>
+      </div>
+
+      <!-- TOAST NO BLOQUEANTE -->
+      <div id="mini-toast" class="pointer-events-none opacity-0 transition-opacity duration-200 absolute top-14 left-1/2 -translate-x-1/2 z-50 px-3.5 py-1.5 rounded-full bg-slate-900 border border-cyan-400/50 text-[11px] font-bold text-slate-100 shadow-xl whitespace-nowrap max-w-[92%] truncate">
+        Listo
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. ALMACENAMIENTO SEGURO EN MEMORIA CON FALLBACK A LOCALSTORAGE
+    // =========================================================================
+    const SafeStorage = (() => {
+      const mem = {};
+      return {
+        get(k) {
+          try {
+            if (window.localStorage) {
+              const v = window.localStorage.getItem(k);
+              if (v !== null) return v;
+            }
+          } catch (e) {}
+          return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null;
+        },
+        set(k, v) {
+          const s = String(v);
+          mem[k] = s;
+          try {
+            if (window.localStorage) window.localStorage.setItem(k, s);
+          } catch (e) {}
+        }
+      };
+    })();
+
+    // =========================================================================
+    // 2. REGISTRO DE 7 SUPERUSUARIOS (1 HUMANO + 6 BOTS INSTRUCTORES TÁCTICOS)
+    //    Nota: Las claves NO se muestran en la UI; se validan en el campo password
+    // =========================================================================
+    const SUPERUSER_ROSTER = {
+      '$@Portal': {
+        username: 'Portal',
+        callsign: 'PORTAL',
+        isAdmin: true,
+        isBot: false,
+        roleLabel: 'Comandante · Titular Operativo',
+        specialty: 'Arquitectura Integral, Misiones y Control de Base',
+        avatar: '🛡️',
+        xp: 350
+      },
+      'Portal72@9': {
+        username: 'Portal',
+        callsign: 'PORTAL',
+        isAdmin: true,
+        isBot: false,
+        roleLabel: 'Comandante · Titular Operativo',
+        specialty: 'Arquitectura Integral, Misiones y Control de Base',
+        avatar: '🛡️',
+        xp: 350
+      },
+      '@Timer': {
+        username: 'Timer [BOT · INSTRUCTOR]',
+        callsign: 'TIMER',
+        isAdmin: true,
+        isBot: true,
+        roleLabel: '[BOT · INSTRUCTOR] · Cronometría',
+        specialty: 'Especialista en Cronometría, PWM e Interrupciones',
+        avatar: '⏱️',
+        xp: 300
+      },
+      '@Matter': {
+        username: 'Matter [BOT · INSTRUCTOR]',
+        callsign: 'MATTER',
+        isAdmin: true,
+        isBot: true,
+        roleLabel: '[BOT · INSTRUCTOR] · Cinemática',
+        specialty: 'Arquitecto de Manufactura 3D y Motores Paso a Paso',
+        avatar: '⚙️',
+        xp: 290
+      },
+      '@Reality': {
+        username: 'Reality [BOT · INSTRUCTOR]',
+        callsign: 'REALITY',
+        isAdmin: true,
+        isBot: true,
+        roleLabel: '[BOT · INSTRUCTOR] · Sensores',
+        specialty: 'Ingeniero de Sensores y Telemetría',
+        avatar: '📡',
+        xp: 285
+      },
+      '@Energy': {
+        username: 'Energy [BOT · INSTRUCTOR]',
+        callsign: 'ENERGY',
+        isAdmin: true,
+        isBot: true,
+        roleLabel: '[BOT · INSTRUCTOR] · Potencia',
+        specialty: 'Oficial de Potencia, Drivers y Seguridad Eléctrica',
+        avatar: '⚡',
+        xp: 280
+      },
+      '@Nothing': {
+        username: 'Nothing [BOT · INSTRUCTOR]',
+        callsign: 'NOTHING',
+        isAdmin: true,
+        isBot: true,
+        roleLabel: '[BOT · INSTRUCTOR] · Bare-Metal',
+        specialty: 'Especialista Bare-Metal C++ y Microcontroladores',
+        avatar: '🧬',
+        xp: 275
+      },
+      '@Uncommon': {
+        username: 'Uncommon [BOT · INSTRUCTOR]',
+        callsign: 'UNCOMMON',
+        isAdmin: true,
+        isBot: true,
+        roleLabel: '[BOT · INSTRUCTOR] · Edge AI & IoT',
+        specialty: 'Estratega IoT, MicroPython y Edge AI',
+        avatar: '🛰️',
+        xp: 270
+      }
+    };
+
+    const DEMO_BOT_INSTRUCTORS = [
+      SUPERUSER_ROSTER['@Timer'],
+      SUPERUSER_ROSTER['@Matter'],
+      SUPERUSER_ROSTER['@Reality'],
+      SUPERUSER_ROSTER['@Energy'],
+      SUPERUSER_ROSTER['@Nothing'],
+      SUPERUSER_ROSTER['@Uncommon']
+    ];
+
+    // =========================================================================
+    // 3. CATÁLOGO MULTI-PLACA REAL EN VIVO (6 PLACAS + METADATA PLATFORMIO)
+    // =========================================================================
+    const BOARDS = {
+      esp32s3: {
+        id: 'esp32s3',
+        name: 'ESP32-S3',
+        voltage: '3.3V',
+        pioPlatform: 'espressif32',
+        pioBoard: 'esp32-s3-devkitc-1',
+        arch: 'Dual-Core Xtensa LX7 · WiFi/BLE',
+        pins: { led: '2', btn: '4', servo: '13', step: '14', dir: '27', trig: '5', echo: '18', sda: '21', scl: '22' },
+        headerPins: ['3V3', 'GND', 'GPIO2', 'GPIO4', 'GPIO13', 'SDA21'],
+        notes: 'Lógica estricta de 3.3V. No aplicar 5V directos en pines GPIO sin divisor resistivo.'
+      },
+      uno_r3: {
+        id: 'uno_r3',
+        name: 'Arduino Uno R3',
+        voltage: '5V',
+        pioPlatform: 'atmelavr',
+        pioBoard: 'uno',
+        arch: 'ATmega328P 16MHz · 8-bit AVR',
+        pins: { led: '13', btn: '2', servo: '9', step: '3', dir: '4', trig: '7', echo: '8', sda: 'A4', scl: 'A5' },
+        headerPins: ['5V', 'GND', 'D13', 'D2', 'D9', 'A4/SDA'],
+        notes: 'Lógica 5V (20 mA máx por pin). Bus I2C en A4 (SDA) y A5 (SCL).'
+      },
+      uno_r4: {
+        id: 'uno_r4',
+        name: 'Arduino Uno R4 WiFi',
+        voltage: '5V',
+        pioPlatform: 'renesas-ra',
+        pioBoard: 'uno_r4_wifi',
+        arch: 'Renesas RA4M1 48MHz + ESP32-S3 + Matriz 12x8',
+        pins: { led: '13', btn: '2', servo: '9', step: '3', dir: '4', trig: '7', echo: '8', sda: 'A4', scl: 'A5' },
+        headerPins: ['5V', 'GND', 'D13', 'D2', 'D9', 'QWIIC'],
+        notes: 'Compatible con shields 5V del R3, incluye matriz LED 12x8 integrada y conector Qwiic 3.3V.'
+      },
+      pico: {
+        id: 'pico',
+        name: 'Raspberry Pi Pico',
+        voltage: '3.3V',
+        pioPlatform: 'raspberrypi',
+        pioBoard: 'pico',
+        arch: 'RP2040 Dual-Core ARM Cortex-M0+ 133MHz',
+        pins: { led: '25', btn: '14', servo: '15', step: '16', dir: '17', trig: '18', echo: '19', sda: '4', scl: '5' },
+        headerPins: ['3V3', 'GND', 'GP25', 'GP14', 'GP15', 'GP4/SDA'],
+        notes: 'Lógica 3.3V. Soporta MicroPython nativo y C++ (Earle Philhower). Bus I2C0 en GP4/GP5.'
+      },
+      rpi5: {
+        id: 'rpi5',
+        name: 'Raspberry Pi 4/5',
+        voltage: '3.3V BCM',
+        pioPlatform: 'linux_arm',
+        pioBoard: 'raspberrypi_5',
+        arch: 'BCM2711/2712 Quad-Core ARM64 · Linux SBC',
+        pins: { led: '17', btn: '27', servo: '18', step: '23', dir: '24', trig: '25', echo: '12', sda: '2', scl: '3' },
+        headerPins: ['3V3', 'GND', 'BCM17', 'BCM27', 'BCM18', 'BCM2/SDA'],
+        notes: 'Ordenador completo Linux. Usa numeración BCM de 40 pines y librería Python gpiozero.'
+      },
+      nano: {
+        id: 'nano',
+        name: 'Arduino Nano',
+        voltage: '5V',
+        pioPlatform: 'atmelavr',
+        pioBoard: 'nanoatmega328',
+        arch: 'ATmega328P Compacto para Protoboard',
+        pins: { led: '13', btn: '2', servo: '9', step: '3', dir: '4', trig: '7', echo: '8', sda: 'A4', scl: 'A5' },
+        headerPins: ['5V', 'GND', 'D13', 'D2', 'D9', 'A4/SDA'],
+        notes: 'Factor de forma compacto ideal para insertar directo sobre el canal central de la protoboard.'
+      }
+    };
+
+    // =========================================================================
+    // 4. AUDIO SINTETIZADO DEFENSIVO (WEB AUDIO API)
+    // =========================================================================
+    const soundEngine = {
+      ctx: null,
+      play(type = 'click') {
+        try {
+          if (!this.ctx) {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC) this.ctx = new AC();
+          }
+          if (!this.ctx) return;
+          if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          if (type === 'success') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(523, now);
+            osc.frequency.setValueAtTime(659, now + 0.08);
+            osc.frequency.setValueAtTime(784, now + 0.16);
+            gain.gain.setValueAtTime(0.08, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.start(now); osc.stop(now + 0.29);
+          } else if (type === 'error') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(190, now);
+            osc.frequency.linearRampToValueAtTime(135, now + 0.18);
+            gain.gain.setValueAtTime(0.06, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.start(now); osc.stop(now + 0.21);
+          } else {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(600, now);
+            osc.frequency.exponentialRampToValueAtTime(810, now + 0.045);
+            gain.gain.setValueAtTime(0.05, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.start(now); osc.stop(now + 0.055);
+          }
+        } catch (e) {}
+      }
+    };
+
+    // =========================================================================
+    // 5. MISIONES DEL TALLER DE BLOQUES
+    // =========================================================================
+    let idSeq = 1;
+    const genId = () => 'blk_' + (idSeq++);
+
+    const DEFAULT_MISSIONS = [
+      {
+        id: 1,
+        shortTitle: '1. Primer Pulso Digital',
+        sub: 'Salida digital HIGH',
+        goal: 'Enciende el LED integrado o externo (HIGH) dentro de SETUP o LOOP.',
+        rational: 'HIGH aplica el voltaje lógico de la placa (3.3V en ESP32/Pi o 5V en Arduino) para polarizar el LED.',
+        paletteGroup: 1,
+        defaultTarget: 'setup',
+        checkType: 'led_high'
+      },
+      {
+        id: 2,
+        shortTitle: '2. Latido en Bucle',
+        sub: 'LOOP + Esperar ms',
+        goal: 'En LOOP, enciende el LED, espera 500 ms, apágalo y espera 500 ms.',
+        rational: 'Sin retardos, el procesador conmuta miles de veces por segundo y el ojo humano solo ve una luz tenue.',
+        paletteGroup: 1,
+        defaultTarget: 'loop',
+        checkType: 'blink_loop'
+      },
+      {
+        id: 3,
+        shortTitle: '3. Control PWM Servo SG90',
+        sub: 'Ángulos 90° y 180°',
+        goal: 'Posiciona el Servo en 90°, agrega Esperar y muévelo a 180°.',
+        rational: 'Las señales PWM a 50 Hz codifican la posición angular mediante el ancho del pulso en alto (1.5 ms a 2.5 ms).',
+        paletteGroup: 1,
+        defaultTarget: 'setup',
+        checkType: 'servo_90_180'
+      },
+      {
+        id: 4,
+        shortTitle: '4. Pantallas OLED y LCD I2C',
+        sub: 'Bus serial 2 cables',
+        goal: 'Muestra un mensaje en la pantalla OLED SSD1306 (0x3C) o LCD 16x2 (0x27).',
+        rational: 'El protocolo I2C permite conectar múltiples pantallas a los mismos dos pines SDA y SCL usando direcciones únicas.',
+        paletteGroup: 2,
+        defaultTarget: 'setup',
+        checkType: 'screen_print'
+      },
+      {
+        id: 5,
+        shortTitle: '5. Motor Paso a Paso NEMA 17',
+        sub: 'Driver A4988 · STEP / DIR',
+        goal: 'Gira el motor NEMA 17 200 pasos en CW (Horario), espera y gira 200 pasos en CCW.',
+        rational: 'Un motor NEMA 17 estándar avanza 1.8° por cada pulso en STEP; 200 pasos equivalen a una revolución exacta.',
+        paletteGroup: 1,
+        defaultTarget: 'setup',
+        checkType: 'stepper_cw_ccw'
+      },
+      {
+        id: 6,
+        shortTitle: '6. Sistema Autónomo Sensor + IF',
+        sub: 'HC-SR04 + Decisión + Actuador',
+        goal: 'En LOOP, lee el sensor ultrasónico y usa Si/Sino para mover un motor o activar alerta.',
+        rational: 'Un sistema mecatrónico cierra el lazo entre sensado del entorno, evaluación condicional y actuación física.',
+        paletteGroup: 2,
+        defaultTarget: 'loop',
+        checkType: 'autonomous_if'
+      }
+    ];
+
+    function evaluateMission(m, blocks) {
+      const all = flattenBlocks(blocks);
+      const loopItems = (blocks.find(b => b.type === 'loop')?.children) || [];
+
+      if (m.checkType === 'led_high') {
+        return all.some(b => b.type === 'led_write' && b.params.state === 'HIGH')
+          ? { ok: true, mastery: 'Dominas salidas digitales binarias en ' + BOARDS[state.activeBoard].name + '.' }
+          : { ok: false, hint: 'Agrega el bloque "LED" en estado ON (HIGH) dentro de SETUP o LOOP.' };
+      }
+      if (m.checkType === 'blink_loop') {
+        const hasH = loopItems.some(b => b.type === 'led_write' && b.params.state === 'HIGH');
+        const hasL = loopItems.some(b => b.type === 'led_write' && b.params.state === 'LOW');
+        const waits = loopItems.filter(b => b.type === 'wait').length;
+        return (hasH && hasL && waits >= 2)
+          ? { ok: true, mastery: 'Dominas ciclos infinitos y temporización en milisegundos.' }
+          : { ok: false, hint: 'Dentro de LOOP coloca: LED ON, Esperar, LED OFF y otro bloque Esperar.' };
+      }
+      if (m.checkType === 'servo_90_180') {
+        const servos = all.filter(b => b.type === 'servo_write');
+        return (servos.some(s => Number(s.params.angle) === 90) && servos.some(s => Number(s.params.angle) === 180))
+          ? { ok: true, mastery: 'Controlas actuadores PWM con precisión angular.' }
+          : { ok: false, hint: 'Inserta dos bloques "Servo": uno en 90° y otro en 180°.' };
+      }
+      if (m.checkType === 'screen_print') {
+        return all.some(b => b.type === 'oled_print' || b.type === 'lcd_print')
+          ? { ok: true, mastery: 'Integras interfaces hombre-máquina (HMI) por protocolo I2C.' }
+          : { ok: false, hint: 'Abre "Pantallas y Lógica" abajo y agrega un bloque OLED o LCD.' };
+      }
+      if (m.checkType === 'stepper_cw_ccw') {
+        const st = all.filter(b => b.type === 'stepper_move');
+        return (st.some(s => s.params.dir === 'CW') && st.some(s => s.params.dir === 'CCW'))
+          ? { ok: true, mastery: 'Controlas motores paso a paso industriales mediante señales STEP y DIR.' }
+          : { ok: false, hint: 'Agrega dos bloques "NEMA 17": uno en sentido CW y otro en CCW.' };
+      }
+      if (m.checkType === 'autonomous_if') {
+        return loopItems.some(b => b.type === 'if_else_block')
+          ? { ok: true, mastery: '¡Arquitectura completa! Tu algoritmo toma decisiones en tiempo real.' }
+          : { ok: false, hint: 'Inserta un bloque "Si/Sino" dentro de LOOP y añade acciones en sus ramas.' };
+      }
+      return all.length > 0
+        ? { ok: true, mastery: '¡Reto personalizado completado!' }
+        : { ok: false, hint: 'Agrega bloques para resolver el reto propuesto.' };
+    }
+
+    // =========================================================================
+    // 6. PLANTILLAS DE CODESPACES (VSCODIUM + PLATFORMIO IDE)
+    // =========================================================================
+    function createCodeSpaceProjectObj(id, name, boardId, framework, libs) {
+      const b = BOARDS[boardId] || BOARDS.esp32s3;
+      const isPython = framework === 'micropython' || framework === 'gpiozero';
+      const mainFileName = isPython ? 'main.py' : 'src/main.cpp';
+      const pinsFileName = isPython ? 'pins.py' : 'include/pins.h';
+
+      const mainCode = isPython
+        ? (framework === 'gpiozero'
+          ? `# Proyecto: ${name} (${b.name} · Python 3 gpiozero)\nfrom gpiozero import LED, AngularServo\nimport time\n\nled = LED(${b.pins.led})\nservo = AngularServo(${b.pins.servo}, min_angle=0, max_angle=180)\n\nprint("Iniciando ${name} en ${b.name}")\nwhile True:\n    led.on()\n    servo.angle = 90\n    print("Estado: ACTIVO | Servo 90 deg")\n    time.sleep(0.5)\n    led.off()\n    servo.angle = 0\n    print("Estado: REPOSO | Servo 0 deg")\n    time.sleep(0.5)\n`
+          : `# Proyecto: ${name} (${b.name} · MicroPython)\nfrom machine import Pin, PWM\nimport time\n\nled = Pin(${b.pins.led}, Pin.OUT)\nservo = PWM(Pin(${b.pins.servo}), freq=50)\n\nprint("Boot MicroPython: ${name}")\nwhile True:\n    led.value(1)\n    servo.duty(77)  # 90 grados\n    print("Pulso HIGH | Servo 90°")\n    time.sleep_ms(500)\n    led.value(0)\n    servo.duty(26)  # 0 grados\n    print("Pulso LOW | Servo 0°")\n    time.sleep_ms(500)\n`)
+        : `// Proyecto: ${name} (${b.name} · PlatformIO C++)\n#include <Arduino.h>\n#include "pins.h"\n\nvoid setup() {\n  Serial.begin(115200);\n  pinMode(PIN_LED, OUTPUT);\n  Serial.println("Sistema ${name} listo en ${b.name}");\n}\n\nvoid loop() {\n  digitalWrite(PIN_LED, HIGH);\n  Serial.println("LED HIGH -> ${b.voltage}");\n  delay(500);\n  digitalWrite(PIN_LED, LOW);\n  Serial.println("LED LOW -> 0V");\n  delay(500);\n}\n`;
+
+      const iniContent = `; PlatformIO Project Configuration File\n[env:${b.pioBoard}]\nplatform = ${b.pioPlatform}\nboard = ${b.pioBoard}\nframework = ${framework}\nmonitor_speed = 115200\nlib_deps =\n${libs.split(',').map(l => '  ' + l.trim()).filter(l => l.trim()).join('\n')}\n`;
+
+      const pinsContent = isPython
+        ? `# Mapeo de Pines para ${b.name} (${b.voltage})\nPIN_LED = ${b.pins.led}\nPIN_BTN = ${b.pins.btn}\nPIN_SERVO = ${b.pins.servo}\nPIN_STEP = ${b.pins.step}\nPIN_DIR = ${b.pins.dir}\nPIN_SDA = "${b.pins.sda}"\nPIN_SCL = "${b.pins.scl}"\n`
+        : `#pragma once\n// Mapeo de Hardware para ${b.name} (${b.voltage})\n#define PIN_LED   ${b.pins.led}\n#define PIN_BTN   ${b.pins.btn}\n#define PIN_SERVO ${b.pins.servo}\n#define PIN_STEP  ${b.pins.step}\n#define PIN_DIR   ${b.pins.dir}\n#define PIN_TRIG  ${b.pins.trig}\n#define PIN_ECHO  ${b.pins.echo}\n`;
+
+      const readmeContent = `# ${name}\n\n- **Placa Target:** ${b.name} (${b.voltage})\n- **Framework:** ${framework}\n- **Velocidad Serial:** 115200 baud\n\n## Notas Eléctricas\n${b.notes}\n`;
+
+      const files = {};
+      files[mainFileName] = mainCode;
+      files['platformio.ini'] = iniContent;
+      files[pinsFileName] = pinsContent;
+      files['README.md'] = readmeContent;
+
+      return {
+        id,
+        name,
+        boardId,
+        framework,
+        libs,
+        activeFile: mainFileName,
+        files
+      };
+    }
+
+    // =========================================================================
+    // 7. ESTADO GLOBAL DE LA APLICACIÓN
+    // =========================================================================
+    const state = {
+      user: null, // { username, callsign, isAdmin, isBot, roleLabel, specialty, avatar }
+      activeBoard: 'esp32s3',
+      activeSection: 'inicio',
+      mode: 'ruta',
+      missions: JSON.parse(JSON.stringify(DEFAULT_MISSIONS)),
+      currentMissionIdx: 0,
+      completedMissions: new Set(),
+      xp: 0,
+      streak: 0,
+      integrity: 3,
+      announcement: 'Bienvenidos a la Base MecatroBlock. Verifica el voltaje lógico (3.3V vs 5V) de tu placa antes de energizar.',
+      blocks: [
+        { id: 'setup', type: 'setup', children: [] },
+        { id: 'loop', type: 'loop', children: [] }
+      ],
+      activeTargetKey: 'setup',
+      lastAddedId: null,
+      paletteGroup: 1,
+      isRunning: false,
+      abortCtrl: null,
+      execBlockId: null,
+      hw: {
+        ledHigh: false,
+        servoAngle: 0,
+        nemaSteps: 0,
+        nemaRotDeg: 0,
+        btnPressed: false,
+        oledLine1: 'MecatroBlock',
+        oledLine2: 'Bus I2C Listo',
+        lcdRow0: 'Placa Lista',
+        lcdRow1: '',
+        distanceCm: 25,
+        measuredCm: 25
+      },
+      feedbackAction: null,
+      // CodeSpaces (VSCodium + PlatformIO)
+      codeSpaces: [
+        createCodeSpaceProjectObj('cs-1', 'telemetria-esp32', 'esp32s3', 'arduino', 'waspinator/AccelStepper, adafruit/Adafruit SSD1306'),
+        createCodeSpaceProjectObj('cs-2', 'control-nema17-r4', 'uno_r4', 'arduino', 'waspinator/AccelStepper, marcoschwartz/LiquidCrystal_I2C'),
+        createCodeSpaceProjectObj('cs-3', 'nodo-iot-pico', 'pico', 'micropython', 'micropython-ssd1306')
+      ],
+      activeCodeSpaceId: 'cs-1',
+      pendingCopilotPatch: null,
+      // Protoboard Interactiva
+      proto: {
+        tool: 'inspect',
+        pendingWireStart: null,
+        wires: [],
+        components: []
+      },
+      // Base Operativa (Muro con código compartido + 6 Bots Instructores + Ranking)
+      feedCodeBoxOpen: false,
+      feedPosts: [
+        {
+          id: 'post-1',
+          author: 'Portal',
+          isAdmin: true,
+          isBot: false,
+          badge: 'COMANDANTE · BASE',
+          board: 'ESP32-S3',
+          text: 'Base operativa en línea. Usen la caja de código inferior para compartir rutinas C++ o Python y etiqueten a los instructores (@Timer, @Matter, @Reality, @Energy, @Nothing, @Uncommon).',
+          codeLang: null,
+          codeSnippet: null,
+          volts: 12
+        },
+        {
+          id: 'post-2',
+          author: 'Matter [BOT · INSTRUCTOR]',
+          isAdmin: true,
+          isBot: true,
+          badge: '[BOT · INSTRUCTOR] · CINEMÁTICA',
+          board: 'Arduino Uno R4 WiFi',
+          text: 'Plantilla base para acelerar un NEMA 17 con driver A4988 sin perder pasos por inercia:',
+          codeLang: 'C++',
+          codeSnippet: '#include <AccelStepper.h>\nAccelStepper motor(AccelStepper::DRIVER, 3, 4);\nvoid setup() {\n  motor.setMaxSpeed(800);\n  motor.setAcceleration(350);\n  motor.moveTo(400);\n}\nvoid loop() { motor.run(); }',
+          volts: 9
+        },
+        {
+          id: 'post-3',
+          author: 'Energy [BOT · INSTRUCTOR]',
+          isAdmin: true,
+          isBot: true,
+          badge: '[BOT · INSTRUCTOR] · POTENCIA',
+          board: 'ESP32-S3',
+          text: 'Recordatorio de seguridad eléctrica: nunca alimenten servos ni motores desde el pin 3V3 del ESP32. Compartan tierra (GND) común con fuente externa de 5V/12V.',
+          codeLang: null,
+          codeSnippet: null,
+          volts: 15
+        }
+      ],
+      leaderboard: [
+        { username: 'Portal', role: 'Comandante · Base', xp: 350, level: 99, streak: 7, missions: 6, isBot: false },
+        { username: 'Timer [BOT · INSTRUCTOR]', role: '[BOT · INSTRUCTOR]', xp: 300, level: 5, streak: 6, missions: 6, isBot: true },
+        { username: 'Matter [BOT · INSTRUCTOR]', role: '[BOT · INSTRUCTOR]', xp: 290, level: 5, streak: 5, missions: 6, isBot: true },
+        { username: 'Valeria_Rob', role: 'Equipo Alpha', xp: 150, level: 3, streak: 4, missions: 6, isBot: false },
+        { username: 'Mateo_CNC', role: 'Equipo Beta', xp: 100, level: 2, streak: 3, missions: 4, isBot: false }
+      ]
+    };
+
+    // =========================================================================
+    // 8. SISTEMA DE ACCESO (INVITADO / ALUMNO / SUPERUSUARIO SILENCIOSO)
+    // =========================================================================
+    let isStudentRegisterMode = false;
+
+    window.switchAuthMode = function(mode) {
+      soundEngine.play('click');
+      document.getElementById('student-error-msg').classList.add('hidden');
+      document.getElementById('super-error-msg').classList.add('hidden');
+
+      ['guest', 'student', 'super'].forEach(m => {
+        const tab = document.getElementById(`auth-tab-${m}`);
+        const form = document.getElementById(`auth-form-${m}`);
+        const active = m === mode;
+        form.classList.toggle('hidden', !active);
+        if (m === 'guest') {
+          tab.className = active
+            ? 'min-h-[40px] rounded-xl text-[11px] font-extrabold transition bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+            : 'min-h-[40px] rounded-xl text-[11px] font-extrabold transition text-slate-400 border border-transparent';
+        } else if (m === 'student') {
+          tab.className = active
+            ? 'min-h-[40px] rounded-xl text-[11px] font-extrabold transition bg-sky-500/20 text-sky-300 border border-sky-500/40'
+            : 'min-h-[40px] rounded-xl text-[11px] font-extrabold transition text-slate-400 border border-transparent';
+        } else {
+          tab.className = active
+            ? 'min-h-[40px] rounded-xl text-[11px] font-extrabold transition bg-amber-500/20 text-amber-300 border border-amber-500/40'
+            : 'min-h-[40px] rounded-xl text-[11px] font-extrabold transition text-slate-400 border border-transparent';
+        }
+      });
+    };
+
+    window.toggleStudentRegisterMode = function() {
+      soundEngine.play('click');
+      isStudentRegisterMode = !isStudentRegisterMode;
+      document.getElementById('student-submode-label').textContent = isStudentRegisterMode ? 'Registrar Alumno' : 'Cuenta de Alumno';
+      document.getElementById('student-toggle-text').textContent = isStudentRegisterMode ? 'Ya tengo cuenta' : 'Crear cuenta';
+      document.getElementById('stu-submit-text').textContent = isStudentRegisterMode ? 'Crear Cuenta →' : 'Iniciar Sesión →';
+      document.getElementById('stu-group-row').classList.toggle('hidden', !isStudentRegisterMode);
+    };
+
+    window.handleGuestLogin = function(e) {
+      e.preventDefault();
+      soundEngine.play('success');
+      const raw = document.getElementById('guest-name-input').value.trim();
+      const username = raw || `Maker_${Math.floor(100 + Math.random() * 899)}`;
+      completeLogin({
+        username,
+        callsign: username.toUpperCase(),
+        isAdmin: false,
+        isBot: false,
+        roleLabel: 'Invitado · Taller',
+        specialty: 'Explorador de Mecatrónica',
+        avatar: username.charAt(0).toUpperCase()
+      });
+    };
+
+    window.handleStudentLogin = function(e) {
+      e.preventDefault();
+      const username = document.getElementById('stu-username-input').value.trim();
+      const password = document.getElementById('stu-password-input').value.trim();
+      const group = document.getElementById('stu-group-input').value.trim() || 'Alumno Taller';
+      const errEl = document.getElementById('student-error-msg');
+
+      if (username.length < 3 || password.length < 4) {
+        soundEngine.play('error');
+        errEl.textContent = 'Ingresa usuario (mín. 3 letras) y contraseña (mín. 4 caracteres).';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      const rawAcc = SafeStorage.get('mecatro_students_v5');
+      const accounts = rawAcc ? JSON.parse(rawAcc) : {};
+      const key = username.toLowerCase();
+
+      if (isStudentRegisterMode) {
+        accounts[key] = { username, password, group, xp: 0, streak: 0, completed: [] };
+        SafeStorage.set('mecatro_students_v5', JSON.stringify(accounts));
+      } else {
+        const existing = accounts[key];
+        if (existing && existing.password !== password) {
+          soundEngine.play('error');
+          errEl.textContent = 'Contraseña incorrecta.';
+          errEl.classList.remove('hidden');
+          return;
+        }
+        if (!existing) {
+          accounts[key] = { username, password, group, xp: 0, streak: 0, completed: [] };
+          SafeStorage.set('mecatro_students_v5', JSON.stringify(accounts));
+        } else {
+          state.xp = existing.xp || 0;
+          state.streak = existing.streak || 0;
+          state.completedMissions = new Set(existing.completed || []);
+        }
+      }
+
+      soundEngine.play('success');
+      completeLogin({
+        username,
+        callsign: username.toUpperCase(),
+        isAdmin: false,
+        isBot: false,
+        roleLabel: group,
+        specialty: 'Estudiante de Mecatrónica',
+        avatar: username.charAt(0).toUpperCase()
+      });
+    };
+
+    // PESTAÑA SUPERUSUARIO: Evalúa únicamente la Clave de Acceso Operador (campo password)
+    window.handleSuperuserLogin = function(e) {
+      e.preventDefault();
+      const keyInput = document.getElementById('super-operator-key');
+      const secret = keyInput.value.trim();
+      const errEl = document.getElementById('super-error-msg');
+
+      const operatorProfile = SUPERUSER_ROSTER[secret];
+      if (!operatorProfile) {
+        soundEngine.play('error');
+        errEl.textContent = 'Clave de operador no reconocida.';
+        errEl.classList.remove('hidden');
+        keyInput.value = '';
+        return;
+      }
+
+      errEl.classList.add('hidden');
+      keyInput.value = '';
+      soundEngine.play('success');
+      state.xp = Math.max(state.xp, operatorProfile.xp);
+      completeLogin({ ...operatorProfile });
+    };
+
+    function completeLogin(userObj) {
+      state.user = userObj;
+      SafeStorage.set('mecatro_session_v5', JSON.stringify(userObj));
+      document.getElementById('auth-screen').classList.add('hidden');
+      document.getElementById('main-workspace').classList.remove('hidden');
+
+      const isAdmin = Boolean(userObj.isAdmin);
+      document.getElementById('header-super-badge').classList.toggle('hidden', !isAdmin);
+      document.getElementById('header-admin-btn').classList.toggle('hidden', !isAdmin);
+      document.getElementById('drawer-link-admin').classList.toggle('hidden', !isAdmin);
+
+      syncLeaderboardUser();
+      updateAllUI();
+      navigateToSection('inicio');
+      showMiniToast(isAdmin ? `Operador autenticado: ${userObj.username}` : `¡Bienvenido, ${userObj.username}!`);
+    }
+
+    window.logoutToAuthScreen = function() {
+      soundEngine.play('click');
+      toggleDrawerMenu(false);
+      stopSimulation();
+      state.user = null;
+      SafeStorage.set('mecatro_session_v5', '');
+      document.getElementById('main-workspace').classList.add('hidden');
+      document.getElementById('auth-screen').classList.remove('hidden');
+    };
+
+    window.toggleDrawerMenu = function(open) {
+      soundEngine.play('click');
+      document.getElementById('nav-drawer-overlay').classList.toggle('hidden', !open);
+    };
+
+    window.navigateToSection = function(section, subArg = null) {
+      soundEngine.play('click');
+      state.activeSection = section;
+      document.getElementById('nav-drawer-overlay').classList.add('hidden');
+
+      const allSections = ['inicio', 'codespaces', 'taller', 'protoboard', 'base', 'admin'];
+      const titles = {
+        inicio: 'Base Central',
+        codespaces: 'CodeSpaces',
+        taller: 'Taller Bloques',
+        protoboard: 'Protoboard',
+        base: 'Base Operativa',
+        admin: 'Superusuario'
+      };
+
+      allSections.forEach(s => {
+        const viewEl = document.getElementById(`view-${s}`);
+        const linkEl = document.getElementById(`drawer-link-${s}`);
+        if (viewEl) viewEl.classList.toggle('hidden', s !== section);
+        if (linkEl && s !== 'admin') {
+          linkEl.className = s === section
+            ? 'w-full min-h-[42px] px-3 rounded-xl flex items-center gap-3 text-xs font-extrabold bg-emerald-500/15 text-emerald-300 border border-emerald-500/35'
+            : 'w-full min-h-[42px] px-3 rounded-xl flex items-center gap-3 text-xs font-bold text-slate-300 hover:bg-slate-800';
+        }
+      });
+
+      document.getElementById('header-section-title').textContent = titles[section] || 'MecatroBlock';
+
+      if (section === 'codespaces') renderCodeSpacesView();
+      if (section === 'protoboard') renderProtoboardView();
+      if (section === 'base') {
+        switchBaseSubtab(subArg || 'comunidad');
+        renderBaseFeed();
+        renderInstructorsRoster();
+        renderRanking();
+      }
+      if (section === 'admin') renderAdminPanel();
+      if (section === 'inicio') updateAllUI();
+    };
+
+    // =========================================================================
+    // 9. CAMBIO MULTI-PLACA EN VIVO
+    // =========================================================================
+    window.changeActiveBoard = function(boardId) {
+      if (!BOARDS[boardId]) return;
+      state.activeBoard = boardId;
+      soundEngine.play('click');
+      const b = BOARDS[boardId];
+
+      document.getElementById('hw-led-pin-tag').textContent = `LED ${b.pins.led}`;
+      document.getElementById('hw-servo-pin-tag').textContent = `SRV ${b.pins.servo}`;
+      document.getElementById('hw-btn-pin-tag').textContent = `PIN ${b.pins.btn}`;
+
+      updateAllUI();
+      if (state.activeSection === 'protoboard') renderProtoboardView();
+      showMiniToast(`Placa activa: ${b.name} (${b.voltage})`);
+    };
+
+    function getRankLevel() {
+      if (state.user?.isAdmin) return { level: 99, title: state.user.isBot ? 'Bot Instructor' : 'Comandante Base', pct: 100 };
+      if (state.xp >= 150) return { level: 4, title: 'Ingeniero Mecatrónico', pct: 100 };
+      if (state.xp >= 100) return { level: 3, title: 'Arquitecto Hardware', pct: Math.min(100, ((state.xp - 100) / 50) * 100) };
+      if (state.xp >= 50) return { level: 2, title: 'Técnico Maker', pct: Math.min(100, ((state.xp - 50) / 50) * 100) };
+      return { level: 1, title: 'Iniciado', pct: Math.max(8, (state.xp / 50) * 100) };
+    }
+
+    function updateAllUI() {
+      const b = BOARDS[state.activeBoard];
+      const rank = getRankLevel();
+      document.getElementById('header-xp-pill').textContent = `${state.xp} XP`;
+      document.getElementById('workshop-announcement-text').textContent = state.announcement;
+
+      if (state.user) {
+        document.getElementById('hub-greeting').textContent = state.user.username;
+        document.getElementById('hub-bot-tag').classList.toggle('hidden', !state.user.isBot);
+        document.getElementById('hub-specialty-line').textContent = state.user.specialty || state.user.roleLabel;
+        document.getElementById('drawer-avatar').textContent = state.user.avatar || state.user.username.charAt(0).toUpperCase();
+        document.getElementById('drawer-username').textContent = state.user.username;
+        document.getElementById('drawer-role-badge').textContent = state.user.roleLabel;
+      }
+
+      const activeCs = getActiveCodeSpace();
+      if (activeCs) {
+        document.getElementById('hub-active-cs-title').textContent = `CodeSpace: ${activeCs.name}`;
+      }
+
+      document.getElementById('hub-board-spec').textContent = `Placa: ${b.name} · Lógica ${b.voltage}`;
+      document.getElementById('hub-integrity').textContent = `${state.integrity}/3`;
+      document.getElementById('hub-streak').textContent = state.streak;
+      document.getElementById('hub-rank-name').textContent = `Nv.${rank.level} ${rank.title}`;
+      document.getElementById('hub-missions-done').textContent = `${state.completedMissions.size}/${state.missions.length} Retos`;
+      document.getElementById('hub-xp-bar').style.width = `${rank.pct}%`;
+    }
+
+    // =========================================================================
+    // 10. CODESPACES POR PROYECTO (ESTILO VSCODIUM + PLATFORMIO IDE)
+    // =========================================================================
+    function getActiveCodeSpace() {
+      return state.codeSpaces.find(c => c.id === state.activeCodeSpaceId) || state.codeSpaces[0];
+    }
+
+    function renderCodeSpacesView() {
+      const projSel = document.getElementById('cs-project-selector');
+      projSel.innerHTML = state.codeSpaces.map(cs =>
+        `<option value="${cs.id}" ${cs.id === state.activeCodeSpaceId ? 'selected' : ''}>${escapeHtml(cs.name)} [${BOARDS[cs.boardId]?.name || cs.boardId}]</option>`
+      ).join('');
+
+      const cs = getActiveCodeSpace();
+      if (!cs) return;
+
+      // Renderizar pestañas de archivos del proyecto
+      const fileKeys = Object.keys(cs.files);
+      if (!fileKeys.includes(cs.activeFile)) cs.activeFile = fileKeys[0];
+
+      document.getElementById('cs-file-tabs').innerHTML = fileKeys.map(fname => {
+        const isAct = fname === cs.activeFile;
+        const icon = fname.endsWith('.ini') ? '⚙️' : (fname.endsWith('.h') || fname === 'pins.py' ? '📌' : (fname.endsWith('.md') ? '📘' : '📄'));
+        return `
+          <button onclick="selectCodeSpaceFile('${fname}')"
+            class="shrink-0 px-2.5 py-1.5 rounded-lg font-mono text-[11px] font-bold flex items-center gap-1 border ${isAct ? 'bg-[#161B22] border-sky-500/60 text-sky-300' : 'bg-transparent border-transparent text-slate-400 hover:text-slate-200'}">
+            <span>${icon}</span><span>${fname}</span>
+          </button>
+        `;
+      }).join('');
+
+      const textarea = document.getElementById('cs-code-textarea');
+      textarea.value = cs.files[cs.activeFile] || '';
+      updateCodeEditorLineNumbers();
+      syncCodeSpaceMiniHw();
+    }
+
+    window.selectCodeSpaceProject = function(csId) {
+      soundEngine.play('click');
+      state.activeCodeSpaceId = csId;
+      const cs = getActiveCodeSpace();
+      if (cs && BOARDS[cs.boardId]) {
+        state.activeBoard = cs.boardId;
+        document.getElementById('global-board-selector').value = cs.boardId;
+      }
+      renderCodeSpacesView();
+      updateAllUI();
+    };
+
+    window.selectCodeSpaceFile = function(fname) {
+      soundEngine.play('click');
+      const cs = getActiveCodeSpace();
+      if (!cs) return;
+      cs.activeFile = fname;
+      renderCodeSpacesView();
+    };
+
+    window.handleCodeEditorInput = function() {
+      const cs = getActiveCodeSpace();
+      if (!cs) return;
+      const textarea = document.getElementById('cs-code-textarea');
+      cs.files[cs.activeFile] = textarea.value;
+      updateCodeEditorLineNumbers();
+    };
+
+    function updateCodeEditorLineNumbers() {
+      const textarea = document.getElementById('cs-code-textarea');
+      const lines = (textarea.value || '').split('\n').length;
+      let nums = '';
+      for (let i = 1; i <= Math.max(lines, 14); i++) nums += i + '\n';
+      document.getElementById('cs-line-numbers').textContent = nums;
+    }
+
+    window.syncCodeEditorScroll = function() {
+      const textarea = document.getElementById('cs-code-textarea');
+      document.getElementById('cs-line-numbers').scrollTop = textarea.scrollTop;
+    };
+
+    window.insertCodeSnippet = function(str) {
+      soundEngine.play('click');
+      const ta = document.getElementById('cs-code-textarea');
+      const start = ta.selectionStart || 0;
+      const end = ta.selectionEnd || 0;
+      const val = ta.value;
+      ta.value = val.substring(0, start) + str + val.substring(end);
+      ta.selectionStart = ta.selectionEnd = start + str.length;
+      ta.focus();
+      handleCodeEditorInput();
+    };
+
+    window.toggleNewCodeSpaceModal = function(open) {
+      soundEngine.play('click');
+      document.getElementById('new-cs-modal').classList.toggle('hidden', !open);
+      if (open) document.getElementById('new-cs-board').value = state.activeBoard;
+    };
+
+    window.createNewCodeSpace = function(e) {
+      e.preventDefault();
+      const rawName = document.getElementById('new-cs-name').value.trim().replace(/\s+/g, '-').toLowerCase();
+      const boardId = document.getElementById('new-cs-board').value;
+      const framework = document.getElementById('new-cs-framework').value;
+      const libs = document.getElementById('new-cs-libs').value.trim();
+      if (!rawName) return;
+
+      const id = 'cs-' + Date.now();
+      const newProj = createCodeSpaceProjectObj(id, rawName, boardId, framework, libs);
+      state.codeSpaces.unshift(newProj);
+      state.activeCodeSpaceId = id;
+      state.activeBoard = boardId;
+      document.getElementById('global-board-selector').value = boardId;
+      document.getElementById('new-cs-name').value = '';
+      toggleNewCodeSpaceModal(false);
+      soundEngine.play('success');
+      renderCodeSpacesView();
+      updateAllUI();
+      showMiniToast(`CodeSpace "${rawName}" inicializado`);
+    };
+
+    window.importBlocksIntoActiveCodeSpace = function() {
+      const cs = getActiveCodeSpace();
+      if (!cs) return;
+      const isPy = cs.framework === 'micropython' || cs.framework === 'gpiozero';
+      const targetFile = isPy ? 'main.py' : 'src/main.cpp';
+      cs.files[targetFile] = transpileBlocksToSource(state.blocks, isPy ? 'python' : 'cpp');
+      cs.activeFile = targetFile;
+      soundEngine.play('success');
+      if (state.activeSection !== 'codespaces') navigateToSection('codespaces');
+      else renderCodeSpacesView();
+      showMiniToast(`Bloques transpiles a ${targetFile}`);
+    };
+
+    // --- PlatformIO Build (Compilación y Validación Sintáctica) ---
+    window.runPlatformIOBuild = function() {
+      const cs = getActiveCodeSpace();
+      if (!cs) return;
+      const b = BOARDS[cs.boardId] || BOARDS.esp32s3;
+      const mainFile = cs.files['src/main.cpp'] !== undefined ? 'src/main.cpp' : 'main.py';
+      const code = cs.files[mainFile] || '';
+      const ini = cs.files['platformio.ini'] || '';
+
+      openCsDrawer('build');
+      const outEl = document.getElementById('cs-drawer-build');
+
+      const errors = [];
+      if (!ini.includes('[env:')) errors.push('platformio.ini: Falta sección [env:...]');
+      if (mainFile.endsWith('.cpp')) {
+        const openBraces = (code.match(/\{/g) || []).length;
+        const closeBraces = (code.match(/\}/g) || []).length;
+        if (openBraces !== closeBraces) errors.push(`${mainFile}: Llaves desbalanceadas ({ = ${openBraces}, } = ${closeBraces})`);
+        if (!code.includes('setup()')) errors.push(`${mainFile}: Falta definición void setup()`);
+        if (!code.includes('loop()')) errors.push(`${mainFile}: Falta definición void loop()`);
+      } else {
+        const openParens = (code.match(/\(/g) || []).length;
+        const closeParens = (code.match(/\)/g) || []).length;
+        if (openParens !== closeParens) errors.push(`${mainFile}: Paréntesis desbalanceados`);
+      }
+
+      if (errors.length > 0) {
+        soundEngine.play('error');
+        outEl.innerHTML = `<span class="text-sky-400">Processing ${b.pioBoard} (platform: ${b.pioPlatform}; board: ${b.pioBoard}; framework: ${cs.framework})</span>\n` +
+          `<span class="text-rose-400 font-bold">*** [FAILED] Errores de compilación detectados:</span>\n` +
+          errors.map(e => `<span class="text-rose-300">  ✖ ${escapeHtml(e)}</span>`).join('\n');
+      } else {
+        soundEngine.play('success');
+        const ramPct = Math.min(82, 12 + Math.round(code.length / 45));
+        const flashPct = Math.min(88, 18 + Math.round(code.length / 30));
+        outEl.innerHTML = `<span class="text-sky-400">Processing ${b.pioBoard} (platform: ${b.pioPlatform}; framework: ${cs.framework})</span>\n` +
+          `Checking size .pio/build/${b.pioBoard}/firmware.elf\n` +
+          `RAM:   [==        ]  ${ramPct}.4% (used 48120 bytes)\n` +
+          `Flash: [===       ]  ${flashPct}.2% (used 342180 bytes)\n` +
+          `<span class="text-emerald-400 font-bold">========================= [SUCCESS] Took 1.38 seconds =========================</span>`;
+      }
+    };
+
+    // --- Run Sandbox (Interpreta el código del editor y actualiza Hardware + Serial) ---
+    window.runCodeSpaceSandbox = function() {
+      const cs = getActiveCodeSpace();
+      if (!cs) return;
+      const mainFile = cs.files['src/main.cpp'] !== undefined ? 'src/main.cpp' : 'main.py';
+      const code = cs.files[mainFile] || '';
+
+      openCsDrawer('serial');
+      soundEngine.play('success');
+
+      // Analizar instrucciones clave en el código del editor para reflejarlas en el Sandbox
+      if (/HIGH|led\.on\(\)|led\.value\(1\)/i.test(code)) state.hw.ledHigh = true;
+      else if (/LOW|led\.off\(\)|led\.value\(0\)/i.test(code)) state.hw.ledHigh = false;
+
+      const servoMatch = code.match(/(?:servo\.write|servo\.angle\s*=)\s*\(?(\d+)/i);
+      if (servoMatch) state.hw.servoAngle = Math.min(180, Math.max(0, Number(servoMatch[1])));
+
+      const nemaMatch = code.match(/(?:move|moveTo)\s*\(\s*(-?\d+)/i);
+      if (nemaMatch) {
+        const st = Number(nemaMatch[1]);
+        state.hw.nemaSteps += st;
+        state.hw.nemaRotDeg += st * 1.8;
+      }
+
+      const printMatches = [...code.matchAll(/(?:Serial\.println|print|oled\.println|lcd\.print)\s*\(\s*["']([^"']+)["']\s*\)/g)];
+      const serialLog = document.getElementById('cs-serial-log');
+      const nowStr = new Date().toLocaleTimeString('es-MX', { hour12: false });
+
+      if (printMatches.length > 0) {
+        printMatches.forEach(m => {
+          serialLog.innerHTML += `<div><span class="text-slate-500">[${nowStr}]</span> ${escapeHtml(m[1])}</div>`;
+          state.hw.oledLine1 = m[1].slice(0, 16);
+        });
+      } else {
+        serialLog.innerHTML += `<div><span class="text-slate-500">[${nowStr}]</span> Sandbox ejecutado en ${BOARDS[cs.boardId]?.name} @ 115200 baud</div>`;
+      }
+      serialLog.scrollTop = serialLog.scrollHeight;
+
+      syncHardwareVisuals();
+      syncCodeSpaceMiniHw();
+      showMiniToast('Sandbox hardware actualizado');
+    };
+
+    function syncCodeSpaceMiniHw() {
+      const ledEl = document.getElementById('cs-hw-led');
+      ledEl.textContent = state.hw.ledHigh ? 'LED: ON' : 'LED: OFF';
+      ledEl.className = state.hw.ledHigh
+        ? 'px-1.5 py-0.5 rounded bg-rose-500/25 border border-rose-500/50 text-rose-300 font-bold'
+        : 'px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-400';
+      document.getElementById('cs-hw-servo').textContent = `SRV: ${state.hw.servoAngle}°`;
+      document.getElementById('cs-hw-nema').textContent = `NEMA: ${state.hw.nemaSteps}st`;
+      document.getElementById('cs-hw-screen').textContent = `OLED: ${state.hw.oledLine1}`;
+    }
+
+    window.openSerialMonitor = function() {
+      soundEngine.play('click');
+      openCsDrawer('serial');
+      const log = document.getElementById('cs-serial-log');
+      if (!log.innerHTML.trim()) {
+        log.innerHTML = `<div class="text-slate-400">--- Monitor Serial conectado a 115200 baud ---</div>`;
+      }
+    };
+
+    window.sendSerialCommand = function(e) {
+      e.preventDefault();
+      const inp = document.getElementById('cs-serial-input');
+      const cmd = inp.value.trim();
+      if (!cmd) return;
+      inp.value = '';
+      soundEngine.play('click');
+      const log = document.getElementById('cs-serial-log');
+      log.innerHTML += `<div class="text-sky-300">&gt; TX: ${escapeHtml(cmd)}</div>`;
+
+      if (cmd.toUpperCase() === 'LED_ON') { state.hw.ledHigh = true; syncHardwareVisuals(); syncCodeSpaceMiniHw(); }
+      if (cmd.toUpperCase() === 'LED_OFF') { state.hw.ledHigh = false; syncHardwareVisuals(); syncCodeSpaceMiniHw(); }
+
+      log.innerHTML += `<div class="text-emerald-300">&lt; RX: OK [LED=${state.hw.ledHigh ? 1 : 0}, SRV=${state.hw.servoAngle}°, NEMA=${state.hw.nemaSteps}st]</div>`;
+      log.scrollTop = log.scrollHeight;
+    };
+
+    window.askCodeSpaceCopilot = async function() {
+      const cs = getActiveCodeSpace();
+      if (!cs) return;
+      openCsDrawer('copilot');
+      soundEngine.play('click');
+      const out = document.getElementById('cs-copilot-output');
+      const applyBtn = document.getElementById('cs-apply-patch-btn');
+      applyBtn.classList.add('hidden');
+      out.innerHTML = `<span class="text-violet-300">✨ Analizando ${cs.activeFile} para ${BOARDS[cs.boardId]?.name}...</span>`;
+
+      const b = BOARDS[cs.boardId] || BOARDS.esp32s3;
+      const currentCode = cs.files[cs.activeFile] || '';
+      const prompt = `Revisa y mejora este archivo "${cs.activeFile}" para la placa ${b.name} (${b.voltage}, pines: ${JSON.stringify(b.pins)}). Responde primero con una explicación breve de 2 líneas y luego devuelve únicamente el código completo mejorado dentro de un bloque \`\`\`.\n\n${currentCode}`;
+
+      const reply = await callGeminiText(prompt);
+      const codeBlockMatch = reply.match(/```(?:\w+)?\n([\s\S]*?)```/);
+      if (codeBlockMatch && codeBlockMatch[1]) {
+        state.pendingCopilotPatch = codeBlockMatch[1].trim();
+        applyBtn.classList.remove('hidden');
+        const explanationOnly = reply.replace(/```[\s\S]*?```/, '').trim();
+        out.innerHTML = `<div class="text-slate-200">${escapeHtml(explanationOnly || 'Código optimizado listo para aplicar al editor.')}</div>`;
+      } else {
+        // Fallback inteligente con código listo para aplicar
+        state.pendingCopilotPatch = currentCode + `\n// Optimizado por IA Copilot para ${b.name} (${b.voltage})\n`;
+        applyBtn.classList.remove('hidden');
+        out.innerHTML = `<div class="text-slate-200">${escapeHtml(reply)}</div>`;
+      }
+    };
+
+    window.applyCopilotPatchToEditor = function() {
+      const cs = getActiveCodeSpace();
+      if (!cs || !state.pendingCopilotPatch) return;
+      cs.files[cs.activeFile] = state.pendingCopilotPatch;
+      state.pendingCopilotPatch = null;
+      document.getElementById('cs-apply-patch-btn').classList.add('hidden');
+      soundEngine.play('success');
+      renderCodeSpacesView();
+      showMiniToast(`Parche aplicado a ${cs.activeFile}`);
+    };
+
+    function openCsDrawer(tab) {
+      document.getElementById('cs-terminal-drawer').classList.remove('hidden');
+      switchCsDrawerTab(tab);
+    }
+    window.closeCsDrawer = function() { document.getElementById('cs-terminal-drawer').classList.add('hidden'); };
+    window.switchCsDrawerTab = function(tab) {
+      ['build', 'serial', 'copilot'].forEach(t => {
+        document.getElementById(`cs-drawer-${t}`).classList.toggle('hidden', t !== tab);
+        document.getElementById(`cs-dtab-${t}`).className = t === tab
+          ? 'text-[10px] font-mono font-extrabold text-sky-300 uppercase'
+          : 'text-[10px] font-mono font-bold text-slate-400 uppercase';
+      });
+    };
+
+    // Transpilador de Bloques -> Código C++ o Python para CodeSpaces
+    function transpileBlocksToSource(blocks, lang) {
+      const b = BOARDS[state.activeBoard];
+      const lines = [];
+      if (lang === 'cpp') {
+        lines.push(`// Generado desde Bloques · Placa: ${b.name} (${b.voltage})`);
+        lines.push(`#include <Arduino.h>`);
+        lines.push(`#include <Servo.h>`);
+        lines.push(`#include <AccelStepper.h>`);
+        lines.push(`Servo miServo;`);
+        lines.push(`AccelStepper nema17(AccelStepper::DRIVER, ${b.pins.step}, ${b.pins.dir});`);
+        lines.push(`float distancia_cm = 25.0;`);
+        const emit = (list, ind) => {
+          for (const item of list) {
+            const p = item.params;
+            if (item.type === 'led_write') lines.push(`${ind}digitalWrite(${b.pins.led}, ${p.state});`);
+            else if (item.type === 'servo_write') lines.push(`${ind}miServo.write(${p.angle});`);
+            else if (item.type === 'stepper_move') lines.push(`${ind}nema17.move(${p.dir === 'CCW' ? -p.steps : p.steps}); nema17.runToPosition();`);
+            else if (item.type === 'oled_print') lines.push(`${ind}Serial.println("OLED: ${p.text}");`);
+            else if (item.type === 'lcd_print') lines.push(`${ind}Serial.println("LCD[${p.row}]: ${p.text}");`);
+            else if (item.type === 'wait') lines.push(`${ind}delay(${p.ms});`);
+            else if (item.type === 'repeat_n') {
+              lines.push(`${ind}for (int i = 0; i < ${p.count}; i++) {`);
+              emit(item.children || [], ind + '  ');
+              lines.push(`${ind}}`);
+            } else if (item.type === 'if_else_block') {
+              lines.push(`${ind}if (distancia_cm ${p.op} ${p.threshold}) {`);
+              emit(item.children || [], ind + '  ');
+              lines.push(`${ind}} else {`);
+              emit(item.elseChildren || [], ind + '  ');
+              lines.push(`${ind}}`);
+            }
+          }
+        };
+        lines.push(`void setup() {`);
+        lines.push(`  Serial.begin(115200);`);
+        lines.push(`  pinMode(${b.pins.led}, OUTPUT);`);
+        lines.push(`  miServo.attach(${b.pins.servo});`);
+        emit(blocks.find(x => x.type === 'setup')?.children || [], '  ');
+        lines.push(`}`);
+        lines.push(`void loop() {`);
+        emit(blocks.find(x => x.type === 'loop')?.children || [], '  ');
+        lines.push(`}`);
+      } else {
+        lines.push(`# Generado desde Bloques · ${b.name}`);
+        lines.push(`from machine import Pin, PWM`);
+        lines.push(`import time`);
+        lines.push(`led = Pin(${b.pins.led}, Pin.OUT)`);
+        lines.push(`servo = PWM(Pin(${b.pins.servo}), freq=50)`);
+        lines.push(`while True:`);
+        const loopItems = blocks.find(x => x.type === 'loop')?.children || [];
+        if (loopItems.length === 0) lines.push(`    pass`);
+        else {
+          for (const item of loopItems) {
+            if (item.type === 'led_write') lines.push(`    led.value(${item.params.state === 'HIGH' ? 1 : 0})`);
+            else if (item.type === 'wait') lines.push(`    time.sleep_ms(${item.params.ms})`);
+          }
+        }
+      }
+      return lines.join('\n') + '\n';
+    }
+
+    // =========================================================================
+    // 11. TALLER DE BLOQUES TAP-TO-TARGET Y SIMULADOR
+    // =========================================================================
+    function createBlock(type) {
+      const id = genId();
+      switch (type) {
+        case 'led_write': return { id, type, params: { state: 'HIGH' } };
+        case 'servo_write': return { id, type, params: { angle: 90 } };
+        case 'stepper_move': return { id, type, params: { steps: 200, dir: 'CW' } };
+        case 'wait': return { id, type, params: { ms: 500 } };
+        case 'oled_print': return { id, type, params: { text: 'ESP32 OK', showVar: 'dist' } };
+        case 'lcd_print': return { id, type, params: { row: 0, text: 'Sistema Activo' } };
+        case 'ultrasonic_read': return { id, type, params: {} };
+        case 'repeat_n': return { id, type, params: { count: 3 }, children: [] };
+        case 'if_else_block': return { id, type, params: { sensor: 'dist', op: '<', threshold: 20 }, children: [], elseChildren: [] };
+        default: return { id, type, params: {} };
+      }
+    }
+
+    function flattenBlocks(list, acc = []) {
+      for (const b of list) {
+        acc.push(b);
+        if (b.children) flattenBlocks(b.children, acc);
+        if (b.elseChildren) flattenBlocks(b.elseChildren, acc);
+      }
+      return acc;
+    }
+
+    function findBlock(list, id) {
+      for (const b of list) {
+        if (b.id === id) return b;
+        if (b.children) { const f = findBlock(b.children, id); if (f) return f; }
+        if (b.elseChildren) { const f2 = findBlock(b.elseChildren, id); if (f2) return f2; }
+      }
+      return null;
+    }
+
+    function getContainerArray(targetKey) {
+      if (targetKey === 'setup' || targetKey === 'loop') {
+        const root = state.blocks.find(b => b.id === targetKey);
+        return root ? root.children : state.blocks[0].children;
+      }
+      const [blkId, branch] = targetKey.split(':');
+      const blk = findBlock(state.blocks, blkId);
+      if (!blk) { state.activeTargetKey = 'loop'; return state.blocks[1].children; }
+      return branch === 'elseChildren' ? blk.elseChildren : blk.children;
+    }
+
+    window.selectTargetContainer = function(e, targetKey) {
+      if (e) e.stopPropagation();
+      state.activeTargetKey = targetKey;
+      soundEngine.play('click');
+      renderBlocksTree();
+    };
+
+    window.insertBlockByTap = function(type) {
+      const newBlk = createBlock(type);
+      getContainerArray(state.activeTargetKey).push(newBlk);
+      state.lastAddedId = newBlk.id;
+      if (type === 'repeat_n' || type === 'if_else_block') state.activeTargetKey = `${newBlk.id}:children`;
+      soundEngine.play('click');
+      renderBlocksTree();
+    };
+
+    window.moveBlock = function(e, parentKey, idx, delta) {
+      e.stopPropagation();
+      const arr = getContainerArray(parentKey);
+      const next = idx + delta;
+      if (next < 0 || next >= arr.length) return;
+      const [m] = arr.splice(idx, 1);
+      arr.splice(next, 0, m);
+      soundEngine.play('click');
+      renderBlocksTree();
+    };
+
+    window.removeBlock = function(e, parentKey, idx) {
+      e.stopPropagation();
+      const arr = getContainerArray(parentKey);
+      const [rem] = arr.splice(idx, 1);
+      if (rem && state.activeTargetKey.startsWith(rem.id)) state.activeTargetKey = parentKey;
+      soundEngine.play('click');
+      renderBlocksTree();
+    };
+
+    window.updateParam = function(blockId, key, val) {
+      const blk = findBlock(state.blocks, blockId);
+      if (!blk) return;
+      blk.params[key] = val;
+      soundEngine.play('click');
+      renderBlocksTree();
+    };
+
+    function renderBlockControls(parentKey, idx, len) {
+      return `
+        <div class="flex items-center gap-1 ml-auto shrink-0" onclick="event.stopPropagation()">
+          <button onclick="moveBlock(event, '${parentKey}', ${idx}, -1)" ${idx === 0 ? 'disabled' : ''} class="w-7 h-7 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 disabled:opacity-25 text-xs font-bold">↑</button>
+          <button onclick="moveBlock(event, '${parentKey}', ${idx}, 1)" ${idx === len - 1 ? 'disabled' : ''} class="w-7 h-7 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 disabled:opacity-25 text-xs font-bold">↓</button>
+          <button onclick="removeBlock(event, '${parentKey}', ${idx})" class="w-7 h-7 rounded-lg bg-rose-500/15 border border-rose-500/35 text-rose-300 text-xs font-bold">×</button>
+        </div>
+      `;
+    }
+
+    function renderChildrenList(children, parentKey) {
+      if (!children || children.length === 0) {
+        return `<div class="py-2 px-2 rounded-xl border border-dashed border-slate-700 text-[11px] text-slate-500 text-center">Toca aquí y agrega bloques abajo</div>`;
+      }
+      const bPins = BOARDS[state.activeBoard].pins;
+
+      return children.map((blk, idx) => {
+        const isExec = state.execBlockId === blk.id;
+        const isNew = state.lastAddedId === blk.id;
+        const cls = `${isExec ? 'block-running' : ''} ${isNew ? 'block-pop' : ''}`;
+        const p = blk.params;
+
+        if (blk.type === 'repeat_n') {
+          const cKey = `${blk.id}:children`;
+          const isT = state.activeTargetKey === cKey;
+          return `
+            <div onclick="selectTargetContainer(event, '${cKey}')" class="rounded-2xl border-2 ${isT ? 'target-active' : 'border-purple-500/40'} bg-purple-500/10 overflow-hidden ${cls}">
+              <div class="px-2.5 py-1.5 bg-purple-500/20 flex items-center gap-1.5">
+                <span class="text-xs font-bold text-purple-100">🔁 Repetir</span>
+                <select onchange="updateParam('${blk.id}', 'count', Number(this.value))" onclick="event.stopPropagation()" class="block-select">
+                  ${[2, 3, 4, 5, 10].map(n => `<option value="${n}" ${Number(p.count) === n ? 'selected' : ''}>${n}x</option>`).join('')}
+                </select>
+                ${renderBlockControls(parentKey, idx, children.length)}
+              </div>
+              <div class="p-2 pl-3 border-l-4 border-purple-500/60 ml-2 my-1 space-y-1.5">
+                ${renderChildrenList(blk.children, cKey)}
+              </div>
+            </div>
+          `;
+        }
+
+        if (blk.type === 'if_else_block') {
+          const thenKey = `${blk.id}:children`;
+          const elseKey = `${blk.id}:elseChildren`;
+          const isThen = state.activeTargetKey === thenKey;
+          const isElse = state.activeTargetKey === elseKey;
+          const isBtn = p.sensor === 'btn';
+          return `
+            <div class="rounded-2xl border-2 ${isThen || isElse ? 'border-sky-400/70' : 'border-amber-500/40'} bg-amber-500/10 overflow-hidden ${cls}">
+              <div onclick="selectTargetContainer(event, '${thenKey}')" class="px-2.5 py-1.5 bg-amber-500/20 flex items-center gap-1 flex-wrap cursor-pointer">
+                <span class="text-xs font-bold text-amber-100">🔀 Si</span>
+                <select onchange="updateParam('${blk.id}', 'sensor', this.value)" onclick="event.stopPropagation()" class="block-select">
+                  <option value="dist" ${!isBtn ? 'selected' : ''}>Dist cm</option>
+                  <option value="btn" ${isBtn ? 'selected' : ''}>Btn ${bPins.btn}</option>
+                </select>
+                ${isBtn ? `
+                  <select onchange="updateParam('${blk.id}', 'threshold', Number(this.value))" onclick="event.stopPropagation()" class="block-select">
+                    <option value="0" ${Number(p.threshold) === 0 ? 'selected' : ''}>PRESIONADO (0)</option>
+                    <option value="1" ${Number(p.threshold) === 1 ? 'selected' : ''}>LIBRE (1)</option>
+                  </select>
+                ` : `
+                  <select onchange="updateParam('${blk.id}', 'op', this.value)" onclick="event.stopPropagation()" class="block-select">
+                    <option value="<" ${p.op === '<' ? 'selected' : ''}>&lt;</option>
+                    <option value=">" ${p.op === '>' ? 'selected' : ''}>&gt;</option>
+                  </select>
+                  <select onchange="updateParam('${blk.id}', 'threshold', Number(this.value))" onclick="event.stopPropagation()" class="block-select">
+                    ${[10, 15, 20, 30, 50].map(cm => `<option value="${cm}" ${Number(p.threshold) === cm ? 'selected' : ''}>${cm}cm</option>`).join('')}
+                  </select>
+                `}
+                ${renderBlockControls(parentKey, idx, children.length)}
+              </div>
+              <div onclick="selectTargetContainer(event, '${thenKey}')" class="p-2 pl-3 border-l-4 ${isThen ? 'border-sky-400 bg-sky-500/10' : 'border-emerald-500/60'} ml-2 my-1 rounded-r-xl space-y-1.5 cursor-pointer">
+                <div class="text-[10px] font-bold uppercase text-emerald-300">Entonces:</div>
+                ${renderChildrenList(blk.children, thenKey)}
+              </div>
+              <div onclick="selectTargetContainer(event, '${elseKey}')" class="px-3 py-1 bg-rose-500/15 border-y border-rose-500/25 flex items-center justify-between cursor-pointer">
+                <span class="text-xs font-bold text-rose-200">Sino (ELSE):</span>
+                <span class="text-[10px] text-rose-300">${isElse ? '● Activo' : 'Tocar'}</span>
+              </div>
+              <div onclick="selectTargetContainer(event, '${elseKey}')" class="p-2 pl-3 border-l-4 ${isElse ? 'border-sky-400 bg-sky-500/10' : 'border-rose-500/60'} ml-2 my-1 rounded-r-xl space-y-1.5 cursor-pointer">
+                ${renderChildrenList(blk.elseChildren, elseKey)}
+              </div>
+            </div>
+          `;
+        }
+
+        let border = 'border-sky-500/40';
+        let content = '';
+        if (blk.type === 'led_write') {
+          content = `<span class="text-xs font-bold text-sky-100">💡 LED (${bPins.led})</span>
+            <select onchange="updateParam('${blk.id}', 'state', this.value)" onclick="event.stopPropagation()" class="block-select">
+              <option value="HIGH" ${p.state === 'HIGH' ? 'selected' : ''}>ON (HIGH)</option>
+              <option value="LOW" ${p.state === 'LOW' ? 'selected' : ''}>OFF (LOW)</option>
+            </select>`;
+        } else if (blk.type === 'servo_write') {
+          content = `<span class="text-xs font-bold text-sky-100">🦾 Servo (${bPins.servo})</span>
+            <select onchange="updateParam('${blk.id}', 'angle', Number(this.value))" onclick="event.stopPropagation()" class="block-select">
+              ${[0, 45, 90, 135, 180].map(a => `<option value="${a}" ${Number(p.angle) === a ? 'selected' : ''}>${a}°</option>`).join('')}
+            </select>`;
+        } else if (blk.type === 'stepper_move') {
+          border = 'border-purple-500/40';
+          content = `<span class="text-xs font-bold text-purple-100">⚙️ NEMA 17</span>
+            <select onchange="updateParam('${blk.id}', 'steps', Number(this.value))" onclick="event.stopPropagation()" class="block-select">
+              ${[50, 100, 200, 400].map(s => `<option value="${s}" ${Number(p.steps) === s ? 'selected' : ''}>${s} st</option>`).join('')}
+            </select>
+            <select onchange="updateParam('${blk.id}', 'dir', this.value)" onclick="event.stopPropagation()" class="block-select">
+              <option value="CW" ${p.dir === 'CW' ? 'selected' : ''}>CW ↻</option>
+              <option value="CCW" ${p.dir === 'CCW' ? 'selected' : ''}>CCW ↺</option>
+            </select>`;
+        } else if (blk.type === 'wait') {
+          border = 'border-amber-500/40';
+          content = `<span class="text-xs font-bold text-amber-100">⏱️ Esperar</span>
+            <select onchange="updateParam('${blk.id}', 'ms', Number(this.value))" onclick="event.stopPropagation()" class="block-select">
+              ${[200, 500, 1000, 2000].map(ms => `<option value="${ms}" ${Number(p.ms) === ms ? 'selected' : ''}>${ms} ms</option>`).join('')}
+            </select>`;
+        } else if (blk.type === 'oled_print') {
+          border = 'border-cyan-500/40';
+          content = `<span class="text-xs font-bold text-cyan-100">🖥️ OLED</span>
+            <select onchange="updateParam('${blk.id}', 'text', this.value)" onclick="event.stopPropagation()" class="block-select">
+              ${['ESP32 OK', 'Alerta Obj!', 'NEMA17 Run', 'Placa Lista'].map(t => `<option value="${t}" ${p.text === t ? 'selected' : ''}>"${t}"</option>`).join('')}
+            </select>
+            <select onchange="updateParam('${blk.id}', 'showVar', this.value)" onclick="event.stopPropagation()" class="block-select">
+              <option value="dist" ${p.showVar === 'dist' ? 'selected' : ''}>+Dist</option>
+              <option value="steps" ${p.showVar === 'steps' ? 'selected' : ''}>+Pasos</option>
+              <option value="none" ${p.showVar === 'none' ? 'selected' : ''}>Solo txt</option>
+            </select>`;
+        } else if (blk.type === 'lcd_print') {
+          border = 'border-emerald-500/40';
+          content = `<span class="text-xs font-bold text-emerald-100">📟 LCD</span>
+            <select onchange="updateParam('${blk.id}', 'row', Number(this.value))" onclick="event.stopPropagation()" class="block-select">
+              <option value="0" ${Number(p.row) === 0 ? 'selected' : ''}>F0</option>
+              <option value="1" ${Number(p.row) === 1 ? 'selected' : ''}>F1</option>
+            </select>
+            <select onchange="updateParam('${blk.id}', 'text', this.value)" onclick="event.stopPropagation()" class="block-select">
+              ${['Sistema Activo', 'Acceso OK', 'Objeto Cerca!', 'Motor Listo'].map(t => `<option value="${t}" ${p.text === t ? 'selected' : ''}>"${t}"</option>`).join('')}
+            </select>`;
+        } else if (blk.type === 'ultrasonic_read') {
+          border = 'border-emerald-500/40';
+          content = `<span class="text-xs font-bold text-emerald-100">📡 Leer HC-SR04</span>`;
+        }
+
+        return `
+          <div class="px-2.5 py-2 rounded-xl bg-slate-900 border ${border} flex items-center gap-1.5 flex-wrap ${cls}">
+            ${content}
+            ${renderBlockControls(parentKey, idx, children.length)}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderBlocksTree() {
+      const names = { setup: 'SETUP (1 vez)', loop: 'LOOP (Ciclo)' };
+      document.getElementById('active-target-label').textContent = names[state.activeTargetKey] || 'Sub-bloque activo';
+      const rootEl = document.getElementById('blocks-tree-root');
+
+      rootEl.innerHTML = state.blocks.map(rootBlk => {
+        const isSetup = rootBlk.type === 'setup';
+        const isTarget = state.activeTargetKey === rootBlk.id;
+        const isExec = state.execBlockId === rootBlk.id;
+        return `
+          <div onclick="selectTargetContainer(event, '${rootBlk.id}')"
+            class="rounded-2xl border-2 ${isTarget ? 'target-active' : (isSetup ? 'border-amber-500/40' : 'border-indigo-500/40')} ${isExec ? 'block-running' : ''} bg-slate-800/55 overflow-hidden cursor-pointer">
+            <div class="px-3 py-2 ${isSetup ? 'bg-amber-500/15 text-amber-200' : 'bg-indigo-500/15 text-indigo-200'} flex items-center justify-between">
+              <span class="text-xs font-extrabold">${isSetup ? '⚡ SETUP — Inicio (1 vez)' : '🔄 LOOP — Ciclo infinito'}</span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded-full ${isTarget ? 'bg-sky-400 text-slate-950 font-bold' : 'bg-slate-950/60 text-slate-400'}">
+                ${isTarget ? '● ACTIVO' : 'Tocar'}
+              </span>
+            </div>
+            <div class="p-2 pl-3 border-l-4 ${isSetup ? 'border-amber-500/60' : 'border-indigo-500/60'} ml-2.5 my-1.5 space-y-1.5">
+              ${renderChildrenList(rootBlk.children, rootBlk.id)}
+            </div>
+          </div>
+        `;
+      }).join('');
+      state.lastAddedId = null;
+    }
+
+    window.togglePaletteCategory = function() {
+      soundEngine.play('click');
+      state.paletteGroup = state.paletteGroup === 1 ? 2 : 1;
+      document.getElementById('palette-group-1').classList.toggle('hidden', state.paletteGroup !== 1);
+      document.getElementById('palette-group-2').classList.toggle('hidden', state.paletteGroup !== 2);
+      document.getElementById('palette-cat-label').textContent = state.paletteGroup === 1 ? 'Pantallas y Lógica ⇄' : 'Motores y Tiempo ⇄';
+    };
+
+    function syncHardwareVisuals() {
+      const hw = state.hw;
+      const volt = BOARDS[state.activeBoard].voltage;
+      document.getElementById('hw-led-halo').style.opacity = hw.ledHigh ? '0.95' : '0';
+      document.getElementById('hw-led-bulb').style.backgroundColor = hw.ledHigh ? '#F43F5E' : '#4C0519';
+      document.getElementById('hw-led-label').textContent = hw.ledHigh ? `${volt} ON` : '0V OFF';
+      document.getElementById('hw-servo-arm').style.transform = `rotate(${hw.servoAngle - 90}deg)`;
+      document.getElementById('hw-servo-deg').textContent = `${hw.servoAngle}°`;
+      document.getElementById('hw-nema-rotor').style.transform = `rotate(${hw.nemaRotDeg}deg)`;
+      document.getElementById('hw-nema-steps').textContent = `${hw.nemaSteps}st`;
+      document.getElementById('hw-btn-icon').textContent = hw.btnPressed ? 'BTN: 0' : 'BTN: 1';
+      document.getElementById('hw-oled-line1').textContent = hw.oledLine1;
+      document.getElementById('hw-oled-line2').textContent = hw.oledLine2;
+      document.getElementById('hw-lcd-row0').textContent = hw.lcdRow0;
+      document.getElementById('hw-lcd-row1').textContent = hw.lcdRow1;
+      document.getElementById('hw-sonic-val').textContent = `${hw.distanceCm}cm`;
+      if (state.activeSection === 'protoboard') renderProtoboardSvgOverlay();
+    }
+
+    window.toggleSimButton = function() {
+      soundEngine.play('click');
+      state.hw.btnPressed = !state.hw.btnPressed;
+      syncHardwareVisuals();
+    };
+
+    window.handleSensorSlide = function(val) {
+      state.hw.distanceCm = Number(val);
+      syncHardwareVisuals();
+    };
+
+    function sleepAbortable(ms, signal) {
+      return new Promise((resolve, reject) => {
+        if (signal.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+        const t = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+        function onAbort() { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')); }
+        signal.addEventListener('abort', onAbort, { once: true });
+      });
+    }
+
+    async function runBlockNode(blk, signal) {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      state.execBlockId = blk.id;
+      renderBlocksTree();
+      await sleepAbortable(130, signal);
+
+      const p = blk.params;
+      if (blk.type === 'setup') await runBlockSequence(blk.children || [], signal);
+      else if (blk.type === 'loop') {
+        while (!signal.aborted) {
+          await runBlockSequence(blk.children || [], signal);
+          await sleepAbortable(60, signal);
+        }
+      } else if (blk.type === 'led_write') {
+        state.hw.ledHigh = p.state === 'HIGH';
+        syncHardwareVisuals();
+      } else if (blk.type === 'servo_write') {
+        state.hw.servoAngle = Number(p.angle);
+        syncHardwareVisuals();
+      } else if (blk.type === 'stepper_move') {
+        const st = Number(p.steps) || 200;
+        const sgn = p.dir === 'CCW' ? -1 : 1;
+        state.hw.nemaSteps += st * sgn;
+        state.hw.nemaRotDeg += (st * 1.8) * sgn;
+        syncHardwareVisuals();
+        await sleepAbortable(220, signal);
+      } else if (blk.type === 'oled_print') {
+        state.hw.oledLine1 = p.text;
+        state.hw.oledLine2 = p.showVar === 'dist' ? `Dist: ${state.hw.measuredCm} cm` : (p.showVar === 'steps' ? `Pasos: ${state.hw.nemaSteps}` : 'SSD1306 128x64');
+        syncHardwareVisuals();
+      } else if (blk.type === 'lcd_print') {
+        if (Number(p.row) === 0) state.hw.lcdRow0 = p.text;
+        else state.hw.lcdRow1 = p.text;
+        syncHardwareVisuals();
+      } else if (blk.type === 'wait') {
+        await sleepAbortable(Number(p.ms), signal);
+      } else if (blk.type === 'repeat_n') {
+        for (let i = 0; i < (Number(p.count) || 1); i++) {
+          if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+          await runBlockSequence(blk.children || [], signal);
+        }
+      } else if (blk.type === 'ultrasonic_read') {
+        state.hw.measuredCm = state.hw.distanceCm;
+      } else if (blk.type === 'if_else_block') {
+        const cond = p.sensor === 'btn'
+          ? (state.hw.btnPressed ? 0 : 1) === Number(p.threshold)
+          : (p.op === '<' ? state.hw.measuredCm < Number(p.threshold) : state.hw.measuredCm > Number(p.threshold));
+        await runBlockSequence(cond ? (blk.children || []) : (blk.elseChildren || []), signal);
+      }
+    }
+
+    async function runBlockSequence(list, signal) {
+      for (const b of list) {
+        if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        await runBlockNode(b, signal);
+      }
+    }
+
+    async function startSimulation() {
+      stopSimulation();
+      state.isRunning = true;
+      state.abortCtrl = new AbortController();
+      const signal = state.abortCtrl.signal;
+      state.hw.measuredCm = state.hw.distanceCm;
+      document.getElementById('sim-play-text').textContent = '■ Parar';
+      try {
+        const setupBlk = state.blocks.find(b => b.type === 'setup');
+        const loopBlk = state.blocks.find(b => b.type === 'loop');
+        if (setupBlk) await runBlockNode(setupBlk, signal);
+        if (loopBlk && loopBlk.children.length > 0) await runBlockNode(loopBlk, signal);
+        if (!signal.aborted) stopSimulation();
+      } catch (e) {}
+    }
+
+    function stopSimulation() {
+      if (state.abortCtrl) { state.abortCtrl.abort(); state.abortCtrl = null; }
+      state.isRunning = false;
+      state.execBlockId = null;
+      document.getElementById('sim-play-text').textContent = '▶ Probar';
+      renderBlocksTree();
+    }
+
+    window.toggleRunSimulation = function() {
+      soundEngine.play('click');
+      if (state.isRunning) stopSimulation();
+      else startSimulation();
+    };
+
+    window.handlePrimaryBottomAction = function() {
+      if (state.mode === 'libre') { toggleRunSimulation(); return; }
+      const m = state.missions[state.currentMissionIdx];
+      const res = evaluateMission(m, state.blocks);
+      if (res.ok) {
+        soundEngine.play('success');
+        const first = !state.completedMissions.has(m.id);
+        const gain = first ? 25 : 5;
+        if (first) { state.completedMissions.add(m.id); state.streak += 1; }
+        state.xp += gain;
+        syncLeaderboardUser();
+        updateAllUI();
+        startSimulation();
+        showFeedbackSheet(true, `+${gain} XP`, '¡Reto Superado!', res.mastery,
+          state.currentMissionIdx < state.missions.length - 1 ? 'Siguiente Reto →' : 'Modo Libre', 'next');
+      } else {
+        soundEngine.play('error');
+        state.streak = 0;
+        updateAllUI();
+        showFeedbackSheet(false, 'Revisa lógica', 'Casi lo tienes', res.hint, 'Corregir Bloques', 'dismiss');
+      }
+    };
+
+    function showFeedbackSheet(ok, xpText, title, msg, btnText, action) {
+      const s = document.getElementById('duo-feedback-sheet');
+      s.className = ok
+        ? 'absolute inset-x-0 bottom-0 z-50 rounded-t-3xl p-4 shadow-2xl border-t-2 border-emerald-500 bg-[#06281E]'
+        : 'absolute inset-x-0 bottom-0 z-50 rounded-t-3xl p-4 shadow-2xl border-t-2 border-rose-500 bg-[#2C0B14]';
+      document.getElementById('fb-icon-box').textContent = ok ? '✓' : '!';
+      document.getElementById('fb-title').textContent = title;
+      document.getElementById('fb-xp-pill').textContent = xpText;
+      document.getElementById('fb-message').textContent = msg;
+      document.getElementById('fb-action-btn').textContent = btnText;
+      state.feedbackAction = action;
+      s.classList.remove('hidden');
+    }
+
+    window.handleFeedbackButton = function() {
+      soundEngine.play('click');
+      document.getElementById('duo-feedback-sheet').classList.add('hidden');
+      if (state.feedbackAction === 'next') {
+        stopSimulation();
+        if (state.currentMissionIdx < state.missions.length - 1) loadMission(state.currentMissionIdx + 1);
+        else setAppMode('libre');
+      }
+    };
+
+    function initMissionSelector() {
+      document.getElementById('mission-selector-dropdown').innerHTML =
+        state.missions.map((m, i) => `<option value="${i}">${m.shortTitle}</option>`).join('');
+    }
+    window.selectMissionByIndex = function(idx) { soundEngine.play('click'); loadMission(idx); };
+    function loadMission(idx) {
+      stopSimulation();
+      document.getElementById('duo-feedback-sheet').classList.add('hidden');
+      state.currentMissionIdx = idx;
+      const m = state.missions[idx];
+      document.getElementById('mission-selector-dropdown').value = idx;
+      document.getElementById('mission-goal-text').textContent = m.goal;
+      document.getElementById('mission-rational-text').textContent = m.rational;
+      state.blocks = [{ id: 'setup', type: 'setup', children: [] }, { id: 'loop', type: 'loop', children: [] }];
+      state.activeTargetKey = m.defaultTarget || 'setup';
+      if (m.paletteGroup && state.paletteGroup !== m.paletteGroup) togglePaletteCategory();
+      renderBlocksTree();
+      updateAllUI();
+    }
+    window.setAppMode = function(mode) {
+      state.mode = mode; soundEngine.play('click');
+      document.getElementById('mode-btn-ruta').className = mode === 'ruta'
+        ? 'px-2 py-1 rounded-md text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+        : 'px-2 py-1 rounded-md text-[10px] font-bold text-slate-400';
+      document.getElementById('mode-btn-libre').className = mode === 'libre'
+        ? 'px-2 py-1 rounded-md text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40'
+        : 'px-2 py-1 rounded-md text-[10px] font-bold text-slate-400';
+      document.getElementById('mission-briefing-box').classList.toggle('hidden', mode !== 'ruta');
+      document.getElementById('primary-cta-text').textContent = mode === 'ruta' ? 'Comprobar Lógica' : 'Ejecutar en Simulador';
+    };
+    window.resetCurrentWorkspace = function() {
+      soundEngine.play('click'); stopSimulation();
+      state.blocks = [{ id: 'setup', type: 'setup', children: [] }, { id: 'loop', type: 'loop', children: [] }];
+      renderBlocksTree();
+    };
+
+    // =========================================================================
+    // 12. PROTOBOARD INTERACTIVA
+    // =========================================================================
+    const PB_COLS = 16;
+
+    function initProtoboardDOM() {
+      const makeRail = (id, netName) => {
+        const el = document.getElementById(id);
+        let h = '';
+        for (let c = 1; c <= PB_COLS; c++) {
+          const nodeId = `${netName}-${c}`;
+          h += `<div id="${nodeId}" data-net="${netName}" data-x="${c * 19}" data-y="${netName === 'VCC' ? 4 : 12}"
+            onclick="handleProtoNodeTap('${nodeId}', '${netName}', ${c * 19}, ${netName === 'VCC' ? 4 : 12})" class="pb-node"></div>`;
+        }
+        el.innerHTML = h;
+      };
+      makeRail('pb-rail-plus', 'VCC');
+      makeRail('pb-rail-minus', 'GND');
+
+      const makeRows = (rows, half, yBase) => rows.map((r, rIdx) => {
+        let cells = '';
+        const y = yBase + rIdx * 14;
+        for (let c = 1; c <= PB_COLS; c++) {
+          const net = `STRIP-${half}-${c}`;
+          const nodeId = `${r}${c}`;
+          const x = c * 19;
+          cells += `<div id="${nodeId}" data-net="${net}" data-x="${x}" data-y="${y}"
+            onclick="handleProtoNodeTap('${nodeId}', '${net}', ${x}, ${y})" class="pb-node"></div>`;
+        }
+        return `<div class="flex items-center gap-1"><span class="w-3 font-mono text-[8px] font-black text-slate-700 text-center">${r}</span>
+          <div class="flex-1 grid gap-[2px]" style="grid-template-columns:repeat(${PB_COLS},minmax(0,1fr));">${cells}</div></div>`;
+      }).join('');
+
+      document.getElementById('pb-matrix-top').innerHTML = makeRows(['A', 'B', 'C', 'D', 'E'], 'TOP', 10);
+      document.getElementById('pb-matrix-bot').innerHTML = makeRows(['F', 'G', 'H', 'I', 'J'], 'BOT', 98);
+    }
+
+    function renderProtoboardView() {
+      const b = BOARDS[state.activeBoard];
+      document.getElementById('pb-board-header-label').textContent = `HEADER: ${b.name} (${b.voltage})`;
+      document.getElementById('pb-mcu-pins-bar').innerHTML = b.headerPins.map((pin, idx) => {
+        const x = 25 + idx * 52;
+        return `
+          <button onclick="handleProtoNodeTap('MCU-${pin}', 'MCU-${pin}', ${x}, 2)"
+            class="py-1 px-1 rounded-lg bg-slate-950 hover:bg-slate-800 border border-cyan-500/40 font-mono text-[9px] font-extrabold text-cyan-300 truncate">
+            ${pin}
+          </button>
+        `;
+      }).join('');
+      renderProtoboardSvgOverlay();
+    }
+
+    window.setProtoTool = function(tool) {
+      soundEngine.play('click');
+      state.proto.tool = tool;
+      state.proto.pendingWireStart = null;
+      ['inspect', 'wire', 'led', 'resistor', 'module'].forEach(t => {
+        const btn = document.getElementById(`pb-tool-${t}`);
+        btn.className = t === tool
+          ? 'min-h-[36px] rounded-xl text-[10px] font-extrabold border bg-cyan-500/20 border-cyan-500/50 text-cyan-200'
+          : 'min-h-[36px] rounded-xl text-[10px] font-extrabold border bg-slate-950 border-slate-800 text-slate-300';
+      });
+      document.getElementById('pb-wire-options').classList.toggle('hidden', tool !== 'wire');
+      document.getElementById('pb-module-options').classList.toggle('hidden', tool !== 'module');
+      document.querySelectorAll('.pb-node').forEach(el => el.classList.remove('pb-node-sel'));
+    };
+
+    window.handleProtoNodeTap = function(nodeId, net, x, y) {
+      soundEngine.play('click');
+      const tool = state.proto.tool;
+
+      document.querySelectorAll('.pb-node').forEach(el => el.classList.remove('pb-node-net', 'pb-node-sel'));
+      document.querySelectorAll(`[data-net="${net}"]`).forEach(el => el.classList.add('pb-node-net'));
+      const domNode = document.getElementById(nodeId);
+      if (domNode) domNode.classList.add('pb-node-sel');
+
+      if (tool === 'inspect') {
+        document.getElementById('pb-audit-title').textContent = `Nodo: ${nodeId} (${net})`;
+        document.getElementById('pb-audit-desc').textContent = 'Continuidad verificada en verde. Cambia de herramienta arriba para colocar LEDs, resistencias o cables.';
+        return;
+      }
+
+      if (tool === 'wire') {
+        if (!state.proto.pendingWireStart) {
+          state.proto.pendingWireStart = { id: nodeId, net, x, y };
+          document.getElementById('pb-audit-title').textContent = `Cable iniciado en ${nodeId}`;
+          document.getElementById('pb-audit-desc').textContent = 'Toca el segundo punto de destino en la protoboard o en los pines de la placa.';
+        } else {
+          const start = state.proto.pendingWireStart;
+          if (start.id !== nodeId) {
+            const color = document.getElementById('pb-wire-color').value;
+            state.proto.wires.push({ from: start, to: { id: nodeId, net, x, y }, color });
+            showMiniToast(`Cable: ${start.id} → ${nodeId}`);
+          }
+          state.proto.pendingWireStart = null;
+          renderProtoboardSvgOverlay();
+          auditProtoCircuit(false);
+        }
+        return;
+      }
+
+      if (tool === 'led' || tool === 'resistor' || tool === 'module') {
+        const modType = tool === 'module' ? document.getElementById('pb-module-type').value : tool;
+        state.proto.components.push({ type: modType, nodeId, net, x, y });
+        renderProtoboardSvgOverlay();
+        auditProtoCircuit(false);
+        showMiniToast(`+ Componente en ${nodeId}`);
+      }
+    };
+
+    function renderProtoboardSvgOverlay() {
+      const svg = document.getElementById('pb-user-svg-layer');
+      let out = '';
+
+      for (const w of state.proto.wires) {
+        out += `<line x1="${w.from.x}" y1="${w.from.y}" x2="${w.to.x}" y2="${w.to.y}" stroke="${w.color}" stroke-width="3" stroke-linecap="round" opacity="0.92"/>`;
+        out += `<circle cx="${w.from.x}" cy="${w.from.y}" r="3" fill="${w.color}"/><circle cx="${w.to.x}" cy="${w.to.y}" r="3" fill="${w.color}"/>`;
+      }
+
+      for (const c of state.proto.components) {
+        if (c.type === 'led') {
+          const glow = state.hw.ledHigh ? '#F43F5E' : '#881337';
+          const halo = state.hw.ledHigh ? `<circle cx="${c.x}" cy="${c.y}" r="14" fill="#F43F5E" opacity="0.45"/>` : '';
+          out += `${halo}<circle cx="${c.x}" cy="${c.y}" r="7" fill="${glow}" stroke="#FFFFFF" stroke-width="1.3"/>`;
+        } else if (c.type === 'resistor') {
+          out += `<rect x="${c.x - 14}" y="${c.y - 4}" width="28" height="8" rx="3" fill="#D97706" stroke="#78350F" stroke-width="1"/>
+                  <line x1="${c.x - 6}" y1="${c.y - 4}" x2="${c.x - 6}" y2="${c.y + 4}" stroke="#EF4444" stroke-width="2"/>
+                  <line x1="${c.x}" y1="${c.y - 4}" x2="${c.x}" y2="${c.y + 4}" stroke="#EF4444" stroke-width="2"/>`;
+        } else if (c.type === 'oled') {
+          out += `<rect x="${c.x - 24}" y="${c.y - 14}" width="48" height="28" rx="4" fill="#0F172A" stroke="#38BDF8" stroke-width="1.5"/>
+                  <text x="${c.x - 19}" y="${c.y - 2}" fill="#38BDF8" font-family="monospace" font-size="6">${escapeHtml(state.hw.oledLine1.slice(0, 10))}</text>
+                  <text x="${c.x - 19}" y="${c.y + 7}" fill="#BAE6FD" font-family="monospace" font-size="5">${escapeHtml(state.hw.oledLine2.slice(0, 11))}</text>`;
+        } else if (c.type === 'servo') {
+          out += `<rect x="${c.x - 16}" y="${c.y - 10}" width="32" height="20" rx="3" fill="#1E293B" stroke="#38BDF8" stroke-width="1.4"/>
+                  <text x="${c.x - 12}" y="${c.y + 3}" fill="#7DD3FC" font-family="monospace" font-size="7">SRV ${state.hw.servoAngle}°</text>`;
+        } else if (c.type === 'a4988') {
+          out += `<rect x="${c.x - 18}" y="${c.y - 12}" width="36" height="24" rx="3" fill="#3B0764" stroke="#C084FC" stroke-width="1.4"/>
+                  <text x="${c.x - 14}" y="${c.y + 3}" fill="#E9D5FF" font-family="monospace" font-size="7">A4988</text>`;
+        } else if (c.type === 'button') {
+          out += `<rect x="${c.x - 10}" y="${c.y - 10}" width="20" height="20" rx="4" fill="#334155" stroke="#FBBF24" stroke-width="1.4"/>
+                  <circle cx="${c.x}" cy="${c.y}" r="5" fill="#FBBF24"/>`;
+        }
+      }
+
+      svg.innerHTML = out;
+      document.getElementById('pb-components-count').textContent = `${state.proto.components.length} componentes · ${state.proto.wires.length} cables`;
+    }
+
+    window.auditProtoCircuit = function(withToast = true) {
+      const card = document.getElementById('pb-audit-card');
+      const title = document.getElementById('pb-audit-title');
+      const desc = document.getElementById('pb-audit-desc');
+
+      const hasShort = state.proto.wires.some(w =>
+        (w.from.net === 'VCC' && w.to.net === 'GND') || (w.from.net === 'GND' && w.to.net === 'VCC')
+      );
+      if (hasShort) {
+        soundEngine.play('error');
+        state.integrity = Math.max(0, state.integrity - 1);
+        updateAllUI();
+        card.className = 'bg-rose-950/60 border border-rose-500 rounded-2xl p-3 space-y-1';
+        title.className = 'text-xs font-black text-rose-300';
+        title.textContent = '⚠️ CORTOCIRCUITO DETECTADO (VCC → GND)';
+        desc.textContent = 'Conectaste alimentación positiva directo a tierra (R ≈ 0 Ω). Retira ese puente para proteger el regulador (-1 ⚡ Integridad).';
+        return false;
+      }
+
+      const hasLed = state.proto.components.some(c => c.type === 'led');
+      const hasRes = state.proto.components.some(c => c.type === 'resistor');
+      if (hasLed && !hasRes) {
+        card.className = 'bg-amber-950/50 border border-amber-500 rounded-2xl p-3 space-y-1';
+        title.className = 'text-xs font-black text-amber-300';
+        title.textContent = '⚡ Advertencia: LED sin resistencia de 220Ω';
+        desc.textContent = 'Agrega una resistencia de 220Ω en serie con el LED para limitar la corriente.';
+        if (withToast) showMiniToast('Falta resistencia de 220Ω');
+        return true;
+      }
+
+      card.className = 'bg-slate-900 border border-emerald-500/45 rounded-2xl p-3 space-y-1';
+      title.className = 'text-xs font-black text-emerald-300';
+      title.textContent = '✓ Auditoría Eléctrica Aprobada';
+      desc.textContent = 'Sin cortocircuitos. Pulsa "Ejecutar en Circuito" para correr tus bloques sobre la protoboard.';
+      if (withToast) { soundEngine.play('success'); showMiniToast('Circuito validado sin cortocircuitos'); }
+      return true;
+    };
+
+    window.runProgramOnProtoboard = function() {
+      if (!auditProtoCircuit(false)) return;
+      if (state.proto.components.length === 0) loadSampleProtoCircuit();
+      soundEngine.play('success');
+      showMiniToast('Ejecutando programa en tu protoboard...');
+      startSimulation();
+    };
+
+    window.loadSampleProtoCircuit = function() {
+      soundEngine.play('click');
+      state.proto.components = [
+        { type: 'resistor', nodeId: 'C4', net: 'STRIP-TOP-4', x: 76, y: 38 },
+        { type: 'led', nodeId: 'C7', net: 'STRIP-TOP-7', x: 133, y: 38 },
+        { type: 'oled', nodeId: 'G12', net: 'STRIP-BOT-12', x: 228, y: 112 }
+      ];
+      state.proto.wires = [
+        { from: { id: 'MCU-GPIO', x: 130, y: 2 }, to: { id: 'A4', net: 'STRIP-TOP-4', x: 76, y: 10 }, color: '#10B981' },
+        { from: { id: 'E7', net: 'STRIP-TOP-7', x: 133, y: 66 }, to: { id: 'GND-7', net: 'GND', x: 133, y: 12 }, color: '#3B82F6' }
+      ];
+      renderProtoboardSvgOverlay();
+      auditProtoCircuit(false);
+    };
+
+    window.clearProtoboard = function() {
+      soundEngine.play('click');
+      state.proto.components = [];
+      state.proto.wires = [];
+      state.proto.pendingWireStart = null;
+      renderProtoboardSvgOverlay();
+      auditProtoCircuit(false);
+    };
+
+    // =========================================================================
+    // 13. BASE OPERATIVA (MURO CON CAJA DE CÓDIGO + 6 BOTS INSTRUCTORES + PODIO)
+    // =========================================================================
+    window.switchBaseSubtab = function(sub) {
+      soundEngine.play('click');
+      ['comunidad', 'instructores', 'ranking'].forEach(t => {
+        document.getElementById(`base-panel-${t}`).classList.toggle('hidden', t !== sub);
+        document.getElementById(`base-tab-${t}`).className = t === sub
+          ? 'min-h-[36px] rounded-lg text-[11px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+          : 'min-h-[36px] rounded-lg text-[11px] font-extrabold text-slate-400';
+      });
+    };
+
+    window.toggleFeedCodeBox = function() {
+      soundEngine.play('click');
+      state.feedCodeBoxOpen = !state.feedCodeBoxOpen;
+      document.getElementById('feed-code-box-wrap').classList.toggle('hidden', !state.feedCodeBoxOpen);
+      document.getElementById('feed-code-toggle-label').textContent = state.feedCodeBoxOpen ? '− Ocultar Código' : '+ Caja de Código';
+    };
+
+    window.fillFeedCodeFromActiveSpace = function() {
+      const cs = getActiveCodeSpace();
+      if (!cs) return;
+      if (!state.feedCodeBoxOpen) toggleFeedCodeBox();
+      document.getElementById('feed-code-textarea').value = cs.files[cs.activeFile] || '';
+      showMiniToast(`Código de ${cs.activeFile} pegado`);
+    };
+
+    function renderBaseFeed() {
+      document.getElementById('base-feed-list').innerHTML = state.feedPosts.map((p, idx) => `
+        <article class="bg-slate-900 border ${p.isBot ? 'border-cyan-500/40' : (p.isAdmin ? 'border-amber-500/45' : 'border-slate-800')} rounded-2xl p-3 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="text-xs font-black ${p.isBot ? 'text-cyan-300' : (p.isAdmin ? 'text-amber-300' : 'text-white')}">${escapeHtml(p.author)}</span>
+                <span class="px-1.5 py-0.2 rounded bg-slate-950 border border-slate-700 font-mono text-[9px] text-slate-300">${escapeHtml(p.badge)}</span>
+              </div>
+            </div>
+            <span class="font-mono text-[10px] text-emerald-400 shrink-0">${escapeHtml(p.board)}</span>
+          </div>
+
+          <p class="text-xs text-slate-200 leading-relaxed">${escapeHtml(p.text)}</p>
+
+          ${p.codeSnippet ? `
+            <div class="bg-[#0D1117] border border-slate-700 rounded-xl overflow-hidden">
+              <div class="px-2.5 py-1 bg-[#161B22] border-b border-slate-800 flex items-center justify-between">
+                <span class="font-mono text-[10px] font-bold text-sky-300">${escapeHtml(p.codeLang || 'CODE')}</span>
+                <button onclick="openSnippetInCodeSpace(${idx})" class="text-[10px] font-extrabold text-emerald-300 underline">
+                  Abrir en CodeSpace →
+                </button>
+              </div>
+              <pre class="p-2.5 font-mono text-[11px] text-slate-200 overflow-x-auto leading-relaxed">${escapeHtml(p.codeSnippet)}</pre>
+            </div>
+          ` : ''}
+
+          <div class="flex items-center justify-between pt-1">
+            <button onclick="voteFeedPost(${idx})"
+              class="px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/35 text-amber-300 font-mono text-[11px] font-extrabold">
+              ⚡ ${p.volts} Voltios
+            </button>
+            <button onclick="triggerInstructorBotReply(${idx})"
+              class="px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-500/35 text-cyan-200 text-[10px] font-extrabold">
+              🤖 Pedir revisión a Bot Instructor
+            </button>
+          </div>
+        </article>
+      `).join('');
+    }
+
+    window.publishBasePost = function(e) {
+      e.preventDefault();
+      const inp = document.getElementById('base-post-input');
+      const txt = inp.value.trim();
+      const codeSnippet = state.feedCodeBoxOpen ? document.getElementById('feed-code-textarea').value.trim() : '';
+      const codeLang = document.getElementById('feed-code-lang').value;
+      if (!txt && !codeSnippet) return;
+
+      state.feedPosts.unshift({
+        id: 'post-' + Date.now(),
+        author: state.user?.username || 'Maker',
+        isAdmin: Boolean(state.user?.isAdmin),
+        isBot: Boolean(state.user?.isBot),
+        badge: state.user?.roleLabel || 'TALLER',
+        board: BOARDS[state.activeBoard].name,
+        text: txt || 'Compartiendo snippet de código:',
+        codeLang: codeSnippet ? codeLang : null,
+        codeSnippet: codeSnippet || null,
+        volts: 1
+      });
+
+      inp.value = '';
+      if (state.feedCodeBoxOpen) {
+        document.getElementById('feed-code-textarea').value = '';
+        toggleFeedCodeBox();
+      }
+      soundEngine.play('success');
+      renderBaseFeed();
+    };
+
+    window.voteFeedPost = function(idx) {
+      if (!state.feedPosts[idx]) return;
+      state.feedPosts[idx].volts += 1;
+      soundEngine.play('click');
+      renderBaseFeed();
+    };
+
+    window.openSnippetInCodeSpace = function(idx) {
+      const post = state.feedPosts[idx];
+      if (!post?.codeSnippet) return;
+      const cs = getActiveCodeSpace();
+      if (!cs) return;
+      const targetFile = post.codeLang === 'Python' ? 'main.py' : (post.codeLang === 'INI' ? 'platformio.ini' : 'src/main.cpp');
+      cs.files[targetFile] = post.codeSnippet;
+      cs.activeFile = targetFile;
+      soundEngine.play('success');
+      navigateToSection('codespaces');
+      showMiniToast(`Snippet cargado en ${targetFile}`);
+    };
+
+    // Respuesta automática de uno de los 6 Bots Instructores declarados
+    window.triggerInstructorBotReply = function(postIdx) {
+      const post = state.feedPosts[postIdx];
+      if (!post) return;
+      const bot = DEMO_BOT_INSTRUCTORS[postIdx % DEMO_BOT_INSTRUCTORS.length];
+      const repliesByCallsign = {
+        TIMER: 'Análisis de temporización: Si usas delay() bloqueante en loop(), perderás pulsos rápidos. Considera temporización no bloqueante con millis().',
+        MATTER: 'Revisión cinemática: Verifica que el driver A4988 tenga microstepping configurado (MS1/MS2/MS3) y rampas de aceleración suaves.',
+        REALITY: 'Telemetría de sensores: Filtra lecturas ultrasónicas promediando 3 muestras consecutivas para evitar falsos disparos por rebote acústico.',
+        ENERGY: 'Auditoría eléctrica: Verifica continuidad de GND común entre la etapa de potencia (12V/5V) y la lógica de 3.3V del microcontrolador.',
+        NOTHING: 'Optimización Bare-Metal: Declara constantes de pines con constexpr o #define en pins.h para ahorrar memoria RAM estática.',
+        UNCOMMON: 'Arquitectura IoT: Estructura tu bucle principal en estados finitos para reportar telemetría JSON sin bloquear actuadores.'
+      };
+      state.feedPosts.unshift({
+        id: 'bot-reply-' + Date.now(),
+        author: bot.username,
+        isAdmin: true,
+        isBot: true,
+        badge: bot.roleLabel,
+        board: post.board,
+        text: `En respuesta a ${post.author}: ${repliesByCallsign[bot.callsign] || bot.specialty}`,
+        codeLang: null,
+        codeSnippet: null,
+        volts: 3
+      });
+      soundEngine.play('success');
+      renderBaseFeed();
+      showMiniToast(`Respuesta de ${bot.username}`);
+    };
+
+    function renderInstructorsRoster() {
+      document.getElementById('instructors-roster-list').innerHTML = DEMO_BOT_INSTRUCTORS.map(bot => `
+        <div class="bg-slate-900 border border-cyan-500/35 rounded-2xl p-3 flex items-start justify-between gap-2.5">
+          <div class="flex items-start gap-2.5 min-w-0">
+            <div class="w-10 h-10 rounded-2xl bg-cyan-500/15 border border-cyan-500/40 flex items-center justify-center text-lg shrink-0">
+              ${bot.avatar}
+            </div>
+            <div class="min-w-0">
+              <div class="text-xs font-black text-cyan-300 truncate">${escapeHtml(bot.username)}</div>
+              <div class="font-mono text-[10px] text-amber-300 font-bold">OPERADOR: ${bot.callsign} · DEMO BOT</div>
+              <p class="text-[11px] text-slate-300 mt-0.5 leading-snug">${escapeHtml(bot.specialty)}</p>
+            </div>
+          </div>
+          <button onclick="openAiCopilotModal('Consulta técnica como ${bot.callsign} (${bot.specialty}) sobre mi placa ${BOARDS[state.activeBoard].name}')"
+            class="shrink-0 px-2.5 py-1.5 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 text-[10px] font-extrabold">
+            Consultar
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function syncLeaderboardUser() {
+      if (!state.user) return;
+      const idx = state.leaderboard.findIndex(u => u.username === state.user.username);
+      const entry = {
+        username: state.user.username,
+        role: state.user.roleLabel,
+        xp: state.xp,
+        level: getRankLevel().level,
+        streak: state.streak,
+        missions: state.completedMissions.size,
+        isBot: Boolean(state.user.isBot)
+      };
+      if (idx >= 0) state.leaderboard[idx] = entry;
+      else state.leaderboard.push(entry);
+    }
+
+    function renderRanking() {
+      const sorted = [...state.leaderboard].sort((a, b) => b.xp - a.xp);
+      const top3 = [sorted[1], sorted[0], sorted[2]].filter(Boolean);
+      document.getElementById('ranking-podium').innerHTML = top3.map(u => {
+        const pos = sorted.findIndex(x => x.username === u.username) + 1;
+        return `
+          <div class="rounded-2xl bg-slate-900 border ${pos === 1 ? 'border-amber-400/60 py-3.5' : 'border-slate-800 py-2.5'} px-2 text-center">
+            <div class="text-lg">${pos === 1 ? '🥇' : pos === 2 ? '🥈' : '🥉'}</div>
+            <div class="text-[11px] font-black text-white truncate">${escapeHtml(u.username)}</div>
+            <div class="font-mono text-[10px] font-bold text-amber-300">${u.xp} XP</div>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('ranking-list').innerHTML = sorted.map((u, idx) => `
+        <div class="rounded-2xl px-3 py-2.5 border ${state.user?.username === u.username ? 'bg-emerald-500/15 border-emerald-500/45' : 'bg-slate-900 border-slate-800'} flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="font-mono text-xs font-black text-slate-400">#${idx + 1}</span>
+            <div class="min-w-0">
+              <div class="text-xs font-extrabold ${u.isBot ? 'text-cyan-300' : 'text-white'} truncate">${escapeHtml(u.username)}</div>
+              <div class="text-[10px] text-slate-400 truncate">${escapeHtml(u.role)} · ${u.missions} retos</div>
+            </div>
+          </div>
+          <span class="font-mono text-xs font-black text-amber-300 shrink-0">${u.xp} XP</span>
+        </div>
+      `).join('');
+    }
+
+    // =========================================================================
+    // 14. PANEL SUPERUSUARIO (7 SUPERUSUARIOS)
+    // =========================================================================
+    function renderAdminPanel() {
+      if (!state.user?.isAdmin) return;
+      document.getElementById('admin-active-callsign').textContent = state.user.username;
+      document.getElementById('admin-announcement-input').value = state.announcement;
+
+      document.getElementById('admin-users-list').innerHTML = state.leaderboard.map((u, idx) => `
+        <div class="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 flex items-center justify-between gap-2">
+          <div class="min-w-0">
+            <div class="text-xs font-bold text-white truncate">${escapeHtml(u.username)}</div>
+            <div class="font-mono text-[10px] text-amber-300">${u.xp} XP</div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <button onclick="adminGiveXp(${idx}, 25)" class="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 text-[10px] font-extrabold">+25 XP</button>
+            <button onclick="adminRemoveUser(${idx})" class="px-2 py-1 rounded-lg bg-rose-500/20 text-rose-300 text-[10px] font-extrabold">Quitar</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    window.adminUpdateAnnouncement = function() {
+      const txt = document.getElementById('admin-announcement-input').value.trim();
+      if (!txt) return;
+      state.announcement = txt;
+      soundEngine.play('success');
+      updateAllUI();
+      showMiniToast('Directiva global actualizada');
+    };
+
+    window.adminAddCustomMission = function() {
+      const title = document.getElementById('admin-mission-title').value.trim();
+      const goal = document.getElementById('admin-mission-goal').value.trim();
+      const rational = document.getElementById('admin-mission-rational').value.trim() || 'Reto agregado desde Comando Superusuario.';
+      if (!title || !goal) return;
+
+      state.missions.push({
+        id: state.missions.length + 1,
+        shortTitle: title,
+        sub: 'Reto Operativo',
+        goal,
+        rational,
+        paletteGroup: 1,
+        defaultTarget: 'loop',
+        checkType: 'custom'
+      });
+      document.getElementById('admin-mission-title').value = '';
+      document.getElementById('admin-mission-goal').value = '';
+      document.getElementById('admin-mission-rational').value = '';
+      initMissionSelector();
+      soundEngine.play('success');
+      showMiniToast('Nuevo reto añadido al taller');
+    };
+
+    window.adminGiveXp = function(idx, amount) {
+      if (!state.leaderboard[idx]) return;
+      state.leaderboard[idx].xp += amount;
+      if (state.leaderboard[idx].username === state.user?.username) state.xp += amount;
+      soundEngine.play('success');
+      renderAdminPanel();
+      updateAllUI();
+    };
+
+    window.adminRemoveUser = function(idx) {
+      state.leaderboard.splice(idx, 1);
+      soundEngine.play('click');
+      renderAdminPanel();
+    };
+
+    window.adminResetAllXp = function() {
+      state.leaderboard.forEach(u => { u.xp = 0; u.missions = 0; });
+      state.xp = 0;
+      state.completedMissions.clear();
+      soundEngine.play('click');
+      renderAdminPanel();
+      updateAllUI();
+      showMiniToast('Puntajes XP reiniciados');
+    };
+
+    window.adminClearFeed = function() {
+      state.feedPosts = [];
+      soundEngine.play('click');
+      showMiniToast('Muro de Base Operativa limpiado');
+    };
+
+    // =========================================================================
+    // 15. COPILOTO IA GLOBAL (GEMINI API CON FALLBACK INTELIGENTE)
+    // =========================================================================
+    window.openAiCopilotModal = function(prefill = null) {
+      soundEngine.play('click');
+      document.getElementById('ai-copilot-modal').classList.remove('hidden');
+      const b = BOARDS[state.activeBoard];
+      document.getElementById('ai-context-badge').textContent = `Placa: ${b.name} (${b.voltage}) · Vista: ${state.activeSection}`;
+      const chips = ['Revisa mi CodeSpace', `Pinout ${b.name}`, 'Cablear NEMA 17', 'Auditar protoboard'];
+      document.getElementById('ai-quick-chips').innerHTML = chips.map(c =>
+        `<button onclick="sendCopilotMessage('${c}')" class="shrink-0 px-3 py-1.5 rounded-full bg-violet-500/15 border border-violet-500/35 text-[11px] font-bold text-violet-200">${c}</button>`
+      ).join('');
+      const box = document.getElementById('ai-copilot-messages');
+      if (box.children.length === 0) {
+        box.innerHTML = `<div class="bg-slate-900 border border-violet-500/30 rounded-2xl p-3 text-xs text-slate-200">🤖 <strong>Mecatro-IA:</strong> Sincronizado con <strong>${b.name}</strong>, tu CodeSpace activo y tu protoboard. ¿Qué necesitas resolver?</div>`;
+      }
+      if (prefill) sendCopilotMessage(prefill);
+    };
+
+    window.closeAiCopilotModal = function() { soundEngine.play('click'); document.getElementById('ai-copilot-modal').classList.add('hidden'); };
+    window.handleGlobalAiSubmit = function(e) {
+      e.preventDefault();
+      const inp = document.getElementById('ai-copilot-input');
+      const t = inp.value.trim();
+      if (!t) return;
+      inp.value = '';
+      sendCopilotMessage(t);
+    };
+
+    window.sendCopilotMessage = async function(text) {
+      const box = document.getElementById('ai-copilot-messages');
+      box.innerHTML += `<div class="ml-8 bg-violet-500/20 border border-violet-500/40 rounded-2xl p-2.5 text-xs text-violet-100">${escapeHtml(text)}</div>`;
+      box.scrollTop = box.scrollHeight;
+      const b = BOARDS[state.activeBoard];
+      const cs = getActiveCodeSpace();
+      const ans = await callGeminiText(`Eres Mecatro-IA. Placa: ${b.name} (${b.voltage}, pines: ${JSON.stringify(b.pins)}). CodeSpace: ${cs?.name} (${cs?.activeFile}). Responde técnico y conciso: ${text}`);
+      box.innerHTML += `<div class="mr-4 bg-slate-900 border border-slate-800 rounded-2xl p-2.5 text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">🤖 ${escapeHtml(ans)}</div>`;
+      box.scrollTop = box.scrollHeight;
+    };
+
+    async function callGeminiText(prompt) {
+      const apiKey = window.__GEMINI_API_KEY__ || '';
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+      try {
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 7500);
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+          signal: ctrl.signal
+        });
+        clearTimeout(tid);
+        if (r.ok) {
+          const d = await r.json();
+          const t = d?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (t) return t.trim();
+        }
+      } catch (e) {}
+      const b = BOARDS[state.activeBoard];
+      return `Diagnóstico local para ${b.name} (${b.voltage}):\n• LED: Pin ${b.pins.led} | Servo PWM: Pin ${b.pins.servo}\n• NEMA 17: STEP=${b.pins.step}, DIR=${b.pins.dir}\n• Bus I2C (OLED 0x3C / LCD 0x27): SDA=${b.pins.sda}, SCL=${b.pins.scl}.`;
+    }
+
+    // =========================================================================
+    // 16. UTILIDADES Y ARRANQUE
+    // =========================================================================
+    function escapeHtml(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    let toastTimer = null;
+    function showMiniToast(msg) {
+      const el = document.getElementById('mini-toast');
+      el.textContent = msg;
+      el.style.opacity = '1';
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { el.style.opacity = '0'; }, 2200);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      try {
+        initMissionSelector();
+        initProtoboardDOM();
+        loadMission(0);
+        renderCodeSpacesView();
+        syncHardwareVisuals();
+
+        const saved = SafeStorage.get('mecatro_session_v5');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.username) completeLogin(parsed);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    });
+  </script>
+</body>
+</html>
